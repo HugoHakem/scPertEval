@@ -11,10 +11,10 @@ from .types import Calibrator
 
 def _drf_per_pert(raws, p):
     pos, neg = raws["positive"], raws["negative"]
-    beyond_perfect = neg > p.perfect if p.direction == "higher" else neg < p.perfect
+    beyond_perfect = neg > p.perfect if p.better == "higher" else neg < p.perfect
     if not np.isfinite(neg) or beyond_perfect:
         return float("nan")
-    if p.direction == "higher":
+    if p.better == "higher":
         num, den = pos - neg, p.perfect - neg
     else:
         num, den = neg - pos, neg - p.perfect
@@ -23,8 +23,8 @@ def _drf_per_pert(raws, p):
 
 def _bds_per_pert(raws, p):
     pos, neg = raws["positive"], raws["negative"]
-    better = pos < neg if p.direction == "lower" else pos > neg
-    return float(better)
+    wins = pos < neg if p.better == "lower" else pos > neg
+    return float(wins)
 
 
 CALIBRATORS = {

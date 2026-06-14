@@ -39,9 +39,10 @@ def src_all_perturbed(ctx, pert):
     return ctx.reference().subset(pert)
 
 
-@SOURCES.register("mean", provides="centroid",
-                  description="mean of all perturbations except the target (pseudobulk negative control)")
-def src_mean(ctx, pert):
+@SOURCES.register("all_perturbed_mean", provides="centroid",
+                  description="all-perturbed mean, excluding the target — leave-one-out "
+                              "(pseudobulk sibling of all_perturbed; pseudobulk negative control)")
+def src_all_perturbed_mean(ctx, pert):
     return ctx.ds.allpert_mean_except(pert)
 
 
@@ -51,10 +52,10 @@ def src_global_mean(ctx, pert):
     return ctx.ds.allpert_mean()
 
 
-@SOURCES.register("interp", provides="centroid",
+@SOURCES.register("interpolated", provides="centroid",
                   description="interpolated duplicate — DE-weighted blend of the held-out half and "
                               "the dataset mean (pseudobulk positive control)")
-def src_interp(ctx, pert):
+def src_interpolated(ctx, pert):
     """alpha = 1 - adjusted p per gene (from the run's DE method, vs control); blend toward
     the held-out replicate where the gene is significant, else toward the all-perturbed mean."""
     tech = np.asarray(to_dense(ctx.ds.cells(pert, half="second"))).mean(0)

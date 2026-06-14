@@ -22,7 +22,7 @@ def _resolve_token(token: str) -> list[Protocol]:
     if token in GROUPS:
         return ([p for p in PROTOCOL_TABLE if p.group == token]
                 + [t.build(t.default) for t in TEMPLATE_TABLE if t.group == token])
-    if "=" in token:                                     # a template with a value, e.g. mmd_top_k=30
+    if "=" in token:                                     # a template with a value, e.g. mse_top_k=30
         name, _, value = token.partition("=")
         if name not in TEMPLATES:
             raise SystemExit(f"unknown parameterised protocol {name!r}; try `epps list protocols`")
@@ -98,8 +98,8 @@ def cmd_list(args) -> None:
         return [fmt(n, registry.meta(n)) for n in registry.names()]
 
     if args.what == "protocols":
-        lines = [f"{p.name:24s} ({p.group}, {p.kind}, space={p.space})" for p in PROTOCOL_TABLE]
-        lines += [f"{t.name:24s} ({t.group}, {t.kind}, {t.param}=…) — {t.description}"
+        lines = [f"{p.name:24s} ({p.group}, {p.representation}, space={p.space})" for p in PROTOCOL_TABLE]
+        lines += [f"{t.name:24s} ({t.group}, {t.representation}, {t.param.name}=…)"
                   for t in TEMPLATE_TABLE]
     elif args.what == "de-methods":
         lines = reg(DE_METHODS, lambda n, m: f"{n:10s} — {m.get('description', '')}")
@@ -121,7 +121,7 @@ def main(argv=None) -> None:
     run.add_argument("-p", "--protocols", action="append", default=[],
                      help="comma-separated names, a group (pseudobulk|distributional|de), or 'all'")
     run.add_argument("--de-method", choices=DE_METHODS.names(), default="t-test",
-                     help="DE backend for EVERY DE-dependent unit in the run: the interp "
+                     help="DE backend for EVERY DE-dependent unit in the run: the interpolated "
                           "positive control, the top_k/degs spaces, the de_* protocols, and the WMSE weights")
     run.add_argument("--subsample", type=int, default=8192)
     run.add_argument("--seed", type=int, default=42)

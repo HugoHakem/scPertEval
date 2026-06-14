@@ -39,16 +39,32 @@ class DEResult:
 
 @dataclass(frozen=True)
 class Protocol:
-    """An evaluation protocol: a pure algorithm plus its data and control wiring."""
+    """An evaluation protocol: a pure metric plus its data and control wiring.
+
+    ``better`` and ``perfect`` describe the metric's score scale and are independent:
+
+    - ``better`` — which direction is an improvement, ``"higher"`` or ``"lower"``.
+      Correlations and overlaps improve as they go up (``"higher"``); errors and
+      distances improve as they go down (``"lower"``). This is the metric's *sense*,
+      and it is not implied by ``perfect`` — e.g. perplexity has ``perfect=1.0`` yet
+      ``better="lower"``, and a log-likelihood has ``perfect=0.0`` yet ``better="higher"``.
+    - ``perfect`` — the value a flawless prediction attains (1.0 for a correlation,
+      0.0 for an error). It anchors the top of the DRF scale.
+
+    Together they let the calibrator orient the score: DRF measures how far the positive
+    control moves from the negative-control floor toward ``perfect`` in the ``better``
+    direction, and BDS counts the perturbations where the positive control is ``better``
+    than the negative.
+    """
 
     name: str
-    algo: Callable
-    kind: str
+    metric: Callable
+    representation: str
     space: str = "full"
     centering: Optional[str] = None
     reference: str = "all_perturbed"
     neg_reference: Optional[str] = None
-    direction: str = "higher"
+    better: str = "higher"
     perfect: float = 1.0
     positive: str = "auto"
     negative: str = "auto"

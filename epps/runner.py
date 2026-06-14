@@ -24,7 +24,7 @@ def resolve_controls(p: Protocol, cfg) -> dict:
 
 def run_protocol(p: Protocol, ctx, calibrator: Calibrator):
     """Return (aggregate scores, per-perturbation rows, wall-clock seconds) for one protocol."""
-    if p.kind == "ranking":
+    if p.representation == "ranking":
         return _run_ranking(p, ctx, calibrator)
     roles = resolve_controls(p, ctx.cfg)
     needed = {role: roles[role] for role in calibrator.requires}
@@ -33,7 +33,7 @@ def run_protocol(p: Protocol, ctx, calibrator: Calibrator):
     def work(pert):
         ctx.current_pert = pert
         gt = ctx.view(pert, "gt", p)
-        raws = {role: p.algo(gt, ctx.view(pert, src, p), ctx) for role, src in needed.items()}
+        raws = {role: p.metric(gt, ctx.view(pert, src, p), ctx) for role, src in needed.items()}
         return pert, raws, calibrator.per_pert(raws, p)
 
     start = perf_counter()
@@ -62,7 +62,7 @@ def _run_ranking(p: Protocol, ctx, calibrator: Calibrator):
 
     start = perf_counter()
     gt = np.vstack([ctx.centroid(pert, "gt", p.centering) for pert in perts])
-    scores = {role: p.algo(np.vstack([ctx.centroid(pert, src, p.centering) for pert in perts]), gt)
+    scores = {role: p.metric(np.vstack([ctx.centroid(pert, src, p.centering) for pert in perts]), gt)
               for role, src in needed.items()}
     seconds = perf_counter() - start
 
@@ -95,7 +95,7 @@ def compute_de_export(ctx, methods):
 
 
 def _check_sources(p: Protocol, roles: dict) -> None:
-    if p.kind in ("population", "de"):
+    if p.representation in ("population", "de"):
         for role, src in roles.items():
             if SOURCES.meta(src).get("provides") != "cells":
                 raise ValueError(

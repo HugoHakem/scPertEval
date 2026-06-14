@@ -11,13 +11,13 @@ def print_summary(cfg, aggregates: dict, calibrator, protocols) -> None:
     name = Path(cfg.dataset).stem
     print(f"\n{name} · {cfg.de_method} · subsample={cfg.subsample} · seed={cfg.seed} · output={cfg.output}\n")
     agg_keys = sorted({k for v in aggregates.values() for k in v})
-    header = f"{'protocol':26s} {'kind':11s} {'space':9s} " + " ".join(f"{k:>9s}" for k in agg_keys)
+    header = f"{'protocol':26s} {'representation':14s} {'space':9s} " + " ".join(f"{k:>9s}" for k in agg_keys)
     print(header)
     print("-" * len(header))
     for p in protocols:
         vals = aggregates.get(p.name, {})
         cells = " ".join(f"{vals.get(k, float('nan')):>9.3f}" for k in agg_keys)
-        print(f"{p.name:26s} {p.kind:11s} {p.space:9s} {cells}")
+        print(f"{p.name:26s} {p.representation:14s} {p.space:9s} {cells}")
     print()
 
 
@@ -38,7 +38,7 @@ def write_timing(cfg, timed: list, timestamp: str) -> Path:
     out_dir = Path(cfg.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     rows = [{"dataset": Path(cfg.dataset).stem, "protocol": p.name,
-             "kind": p.kind, "space": p.space, "seconds": seconds}
+             "representation": p.representation, "space": p.space, "seconds": seconds}
             for p, seconds in timed]
     path = out_dir / f"{Path(cfg.dataset).stem}__{timestamp}__timing.csv"
     pd.DataFrame(rows).to_csv(path, index=False)

@@ -52,28 +52,28 @@ class Context:
         """Precompute shared singletons before the parallel loop so per-perturbation
         threads only ever write per-perturbation cache keys."""
         self.control_mean()
-        if any(p.kind in ("population", "de") for p in protocols):
+        if any(p.representation in ("population", "de") for p in protocols):
             self.reference()
-        if any(p.kind == "de" for p in protocols):
+        if any(p.representation == "de" for p in protocols):
             self._ensure_ref_sums()
             self._moments("control", None)
         if any(p.space == "pca50" for p in protocols):
             self.pca()
         for space in {p.space for p in protocols
-                      if p.kind == "population" and SPACES.meta(p.space).get("global_space")}:
+                      if p.representation == "population" and SPACES.meta(p.space).get("global_space")}:
             self.ref_projection(space)
 
     def view(self, pert: str, source: str, p: Protocol):
-        if p.kind == "population":
+        if p.representation == "population":
             if source == "all_perturbed":
                 return self._reference_population(p.space, pert)
             return SPACES[p.space](SOURCES[source](self, pert), self, pert)
-        if p.kind == "centroid":
+        if p.representation == "centroid":
             v = self.centroid(pert, source, p.centering)
             return SPACES[p.space](v[None, :], self, pert).ravel()
-        if p.kind == "de":
+        if p.representation == "de":
             return self._de_view(pert, source, p)
-        raise ValueError(f"unknown protocol kind {p.kind!r}")
+        raise ValueError(f"unknown protocol representation {p.representation!r}")
 
     def centroid(self, pert, source, centering):
         arr = SOURCES[source](self, pert)

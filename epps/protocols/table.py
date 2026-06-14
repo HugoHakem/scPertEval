@@ -1,97 +1,127 @@
-"""The declarative list of evaluation protocols.
+"""The declarative table of evaluation protocols — every protocol in one list (``TABLE``).
 
-Concrete protocols are explicit rows in ``PROTOCOL_TABLE``. Parameterised ones are
-templates (``TEMPLATE_TABLE``) named with their parameter — e.g. ``mmd_top_k`` — and a
-value is supplied per protocol at the CLI (``-p mmd_top_k=30``), defaulting otherwise.
-To add a protocol, write an algorithm in ``algorithms.py`` and append a row or template here.
+Each row is one protocol:
+
+- a fully-specified protocol is a ``Protocol(...)`` row;
+- a *parameterised* protocol — one whose feature space or metric takes a value supplied at
+  the CLI (e.g. ``-p mse_top_k=30``) — is a ``template(...)`` row carrying a parameter
+  family (``top_k`` / ``pca_k`` / ``degs_padj`` select the space; ``overlap_k`` feeds the
+  metric). With no value a template uses the family default.
+
+To add a protocol, write a metric in ``metrics.py`` and add one row to ``TABLE`` below.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import partial
-from typing import Callable
+from typing import Callable, Optional
 
 from ..blocks.spaces import degs_space, pca_space, top_space
 from ..types import Protocol
-from . import algorithms as A
-
-_PB = dict(group="pseudobulk", positive="interp", negative="mean")
-_PB_CTRL = dict(group="pseudobulk", positive="interp", negative="control")
-_LOWER = dict(direction="lower", perfect=0.0)
-_DIST = dict(group="distributional", positive="tech_dup", negative="all_perturbed", direction="lower", perfect=0.0)
-_DE = dict(group="de", positive="tech_dup", negative="all_perturbed", reference="all_perturbed",
-           neg_reference="control", direction="higher", perfect=1.0)
-_RANK = dict(group="pseudobulk", positive="interp", negative="global_mean", direction="lower", perfect=0.0)
-
-PROTOCOL_TABLE = [
-    Protocol("pearson", A.pearson, "centroid", **_PB),
-    Protocol("pearson_ctrl", A.pearson, "centroid", centering="ctrl", **_PB),
-    Protocol("pearson_pert", A.pearson, "centroid", centering="allpert", **_PB_CTRL),
-    Protocol("mse", A.mse, "centroid", **_PB, **_LOWER),
-    Protocol("wmse_exp1", partial(A.weighted_mse, exp=1.0), "centroid", **_PB, **_LOWER),
-    Protocol("wmse_exp2", partial(A.weighted_mse, exp=2.0), "centroid", **_PB, **_LOWER),
-    Protocol("wmse_exp4", partial(A.weighted_mse, exp=4.0), "centroid", **_PB, **_LOWER),
-    Protocol("rank", partial(A.rank_retrieval, transpose=False), "ranking", **_RANK),
-    Protocol("transpose_rank", partial(A.rank_retrieval, transpose=True), "ranking", **_RANK),
-    Protocol("de_auprc", A.de_auprc, "de", **_DE),
-    Protocol("de_auroc", A.de_auroc, "de", **_DE),
-]
-PROTOCOLS = {p.name: p for p in PROTOCOL_TABLE}
+from . import metrics as M
 
 
+# --- parameter families: a value supplied at the CLI selects a space (or feeds the metric) ---
 @dataclass(frozen=True)
-class Template:
-    """A parameterised protocol; ``build(value)`` returns a concrete Protocol."""
+class Param:
+    """How a CLI value (k / padj) is cast, defaulted, and applied to a parameterised row."""
 
     name: str
-    group: str
-    kind: str
-    param: str          # display name of the parameter, e.g. "k" or "padj"
-    cast: Callable      # int / float
+    cast: Callable
     default: float
-    build: Callable
-    description: str
+    space: Optional[Callable] = None   # value -> space name; if None the value is a metric kwarg
+
+
+top_k = Param("k", int, 50, space=top_space)              # top-k DEGs by effect size
+pca_k = Param("k", int, 50, space=pca_space)              # k principal components
+degs_padj = Param("padj", float, 0.05, space=degs_space)  # DEGs at adjusted p < padj
+overlap_k = Param("k", int, 50)                           # feeds de_overlap's k (a metric arg)
+
+
+# --- shared wiring bundles (controls + score scale), splatted into rows with ** ---
+_PB = dict(group="pseudobulk", positive="interpolated", negative="all_perturbed_mean")
+_PB_CTRL = dict(group="pseudobulk", positive="interpolated", negative="control")
+_LOWER = dict(better="lower", perfect=0.0)
+_DIST = dict(group="distributional", positive="tech_dup", negative="all_perturbed", better="lower", perfect=0.0)
+_DE = dict(group="de", positive="tech_dup", negative="all_perturbed", reference="all_perturbed",
+           neg_reference="control", better="higher", perfect=1.0)
+_RANK = dict(group="pseudobulk", positive="interpolated", negative="global_mean", better="lower", perfect=0.0)
 
 
 def _fmt(v):
     return f"{v:g}" if isinstance(v, float) else str(v)
 
 
-def _space_tpl(name, algo, kind, family, param, cast, default, desc, wiring, centering=None):
-    """A template whose parameter selects the feature space (top_k / pca_k / degs_padj)."""
-    def build(v):
-        extra = {"centering": centering} if centering else {}
-        return Protocol(f"{name}={_fmt(v)}", algo, kind, space=family(v), **extra, **wiring)
-    return Template(name, wiring["group"], kind, param, cast, default, build, desc)
+@dataclass(frozen=True)
+class Template:
+    """A parameterised protocol row; ``build(value)`` returns a concrete ``Protocol``."""
+
+    name: str
+    metric: Callable
+    representation: str
+    param: Param
+    wiring: dict
+
+    @property
+    def group(self):
+        return self.wiring["group"]
+
+    @property
+    def cast(self):
+        return self.param.cast
+
+    @property
+    def default(self):
+        return self.param.default
+
+    def build(self, v) -> Protocol:
+        name = f"{self.name}={_fmt(v)}"
+        if self.param.space is not None:                       # the value selects a feature space
+            return Protocol(name, self.metric, representation=self.representation,
+                            space=self.param.space(v), **self.wiring)
+        metric = partial(self.metric, **{self.param.name: v})  # the value feeds the metric
+        return Protocol(name, metric, representation=self.representation, **self.wiring)
 
 
-def _de_overlap_build(k):
-    return Protocol(f"de_overlap_k={k}", partial(A.de_overlap, k=k), "de", **_DE)
+def template(name, metric, param, *, representation, **wiring) -> Template:
+    """One parameterised protocol row — mirrors ``Protocol(...)`` plus a ``param`` family."""
+    return Template(name, metric, representation, param, wiring)
 
 
-TEMPLATE_TABLE = [
-    _space_tpl("mse_top_k", A.mse, "centroid", top_space, "k", int, 50,
-               "MSE on the top-k DEGs", {**_PB, **_LOWER}),
-    _space_tpl("mse_degs_padj", A.mse, "centroid", degs_space, "padj", float, 0.05,
-               "MSE on significant DEGs (adjusted p < padj)", {**_PB, **_LOWER}),
-    _space_tpl("pearson_pert_top_k", A.pearson, "centroid", top_space, "k", int, 50,
-               "Pearson vs all-perturbed mean on the top-k DEGs", _PB_CTRL, centering="allpert"),
-    _space_tpl("pearson_pert_degs_padj", A.pearson, "centroid", degs_space, "padj", float, 0.05,
-               "Pearson vs all-perturbed mean on significant DEGs", _PB_CTRL, centering="allpert"),
-    _space_tpl("mmd_top_k", A.mmd, "population", top_space, "k", int, 50,
-               "unbiased MMD on the top-k DEGs", _DIST),
-    _space_tpl("mmd_pca_k", A.mmd, "population", pca_space, "k", int, 50,
-               "unbiased MMD in k-dim PCA space", _DIST),
-    _space_tpl("energy_top_k", A.energy, "population", top_space, "k", int, 50,
-               "energy distance on the top-k DEGs", _DIST),
-    _space_tpl("energy_pca_k", A.energy, "population", pca_space, "k", int, 50,
-               "energy distance in k-dim PCA space", _DIST),
-    _space_tpl("sinkhorn_top_k", A.sinkhorn, "population", top_space, "k", int, 50,
-               "Sinkhorn 2-Wasserstein on the top-k DEGs", _DIST),
-    _space_tpl("sinkhorn_pca_k", A.sinkhorn, "population", pca_space, "k", int, 50,
-               "Sinkhorn 2-Wasserstein in k-dim PCA space", _DIST),
-    Template("de_overlap_k", "de", "de", "k", int, 50, _de_overlap_build,
-             "top-k gene overlap between GT and prediction DE rankings"),
+TABLE = [
+    # --- pseudobulk: correlation & error (positive = interpolated duplicate) ---
+    Protocol("pearson", M.pearson, representation="centroid", **_PB),
+    Protocol("pearson_ctrl", M.pearson, representation="centroid", centering="ctrl", **_PB),
+    Protocol("pearson_pert", M.pearson, representation="centroid", centering="allpert", **_PB_CTRL),
+    Protocol("mse", M.mse, representation="centroid", **_PB, **_LOWER),
+    Protocol("wmse_exp1", partial(M.weighted_mse, exp=1.0), representation="centroid", **_PB, **_LOWER),
+    Protocol("wmse_exp2", partial(M.weighted_mse, exp=2.0), representation="centroid", **_PB, **_LOWER),
+    Protocol("wmse_exp4", partial(M.weighted_mse, exp=4.0), representation="centroid", **_PB, **_LOWER),
+    template("mse_top_k", M.mse, top_k, representation="centroid", **_PB, **_LOWER),
+    template("mse_degs_padj", M.mse, degs_padj, representation="centroid", **_PB, **_LOWER),
+    template("pearson_pert_top_k", M.pearson, top_k, representation="centroid", centering="allpert", **_PB_CTRL),
+    template("pearson_pert_degs_padj", M.pearson, degs_padj, representation="centroid", centering="allpert", **_PB_CTRL),
+
+    # --- cross-perturbation retrieval rank ---
+    Protocol("rank", partial(M.rank_retrieval, transpose=False), representation="ranking", **_RANK),
+    Protocol("transpose_rank", partial(M.rank_retrieval, transpose=True), representation="ranking", **_RANK),
+
+    # --- distributional: distances between cell populations (positive = technical duplicate) ---
+    template("unbiased_mmd_median_top_k", M.unbiased_mmd_median, top_k, representation="population", **_DIST),
+    template("unbiased_mmd_median_pca_k", M.unbiased_mmd_median, pca_k, representation="population", **_DIST),
+    template("energy_distance_top_k", M.energy_distance, top_k, representation="population", **_DIST),
+    template("energy_distance_pca_k", M.energy_distance, pca_k, representation="population", **_DIST),
+    template("sinkhorn_w2_top_k", M.sinkhorn_w2, top_k, representation="population", **_DIST),
+    template("sinkhorn_w2_pca_k", M.sinkhorn_w2, pca_k, representation="population", **_DIST),
+
+    # --- differential expression: GT DEGs vs prediction ranking ---
+    Protocol("de_auprc", M.de_auprc, representation="de", **_DE),
+    Protocol("de_auroc", M.de_auroc, representation="de", **_DE),
+    template("de_overlap_k", M.de_overlap, overlap_k, representation="de", **_DE),
 ]
+
+PROTOCOL_TABLE = [r for r in TABLE if isinstance(r, Protocol)]
+TEMPLATE_TABLE = [r for r in TABLE if isinstance(r, Template)]
+PROTOCOLS = {p.name: p for p in PROTOCOL_TABLE}
 TEMPLATES = {t.name: t for t in TEMPLATE_TABLE}
-GROUPS = sorted({p.group for p in PROTOCOL_TABLE} | {t.group for t in TEMPLATE_TABLE})
+GROUPS = sorted({r.group for r in TABLE})
