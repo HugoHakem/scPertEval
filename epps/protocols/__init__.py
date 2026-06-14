@@ -1,2 +1,2 @@
 """Evaluation protocols: pure metrics plus the declarative protocol table."""
-from .table import GROUPS, PROTOCOL_TABLE, PROTOCOLS  # noqa: F401
+from .table import GROUPS, PROTOCOLS, TABLE  # noqa: F401

@@ -138,6 +138,7 @@ That row is the spec; parameters include:
 | `positive` / `negative` | the two control sources to compare |
 | `better` | `"higher"` or `"lower"` — which direction is an improvement |
 | `perfect` | the value a flawless prediction attains |
+| `param` | optional — a parameter family (`top_k`, `pca_k`, `degs_padj`, `overlap_k`) that makes the protocol tunable from the CLI; omit for a fixed protocol |
 
 **`representation` is the one to grasp first.** It decides the format of `gt` and `prediction`
 when your function runs, so you never deal with sampling, references, or
@@ -241,11 +242,11 @@ top-50 DEGs:
 Protocol("mae_top50", M.mae, representation="centroid", space="top_50", **_PB, **_LOWER)
 ```
 
-**Expose the space as a knob (parameterised).** To make `k` adjustable per run, write a
-`template(...)` row instead of a fixed `Protocol(...)` — same arguments, plus a parameter
-family. Its name carries the parameter, and the value is supplied on the CLI:
+**Expose the space as a knob (parameterised).** To make `k` adjustable per run, add a
+`param` to the same `Protocol(...)` row — nothing else changes. The row's name carries the
+parameter, and the value is supplied on the CLI:
 ```python
-template("mae_top_k", M.mae, top_k, representation="centroid", **_PB, **_LOWER)
+Protocol("mae_top_k", M.mae, representation="centroid", param=top_k, **_PB, **_LOWER)
 ```
 Then `epps run data.h5ad -p mae_top_k=30` (or `mae_top_k` for the default `k=50`). The
 families are `top_k` (top-k DEGs), `pca_k` (k PCs), and `degs_padj` (DEGs at adjusted

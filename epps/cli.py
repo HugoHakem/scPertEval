@@ -10,30 +10,32 @@ from .blocks.spaces import SPACES
 from .calibrators import CALIBRATORS
 from .context import Context
 from .dataset import Dataset
-from .protocols.table import GROUPS, PROTOCOL_TABLE, PROTOCOLS, TEMPLATE_TABLE, TEMPLATES
+from .protocols.table import GROUPS, PROTOCOLS, TABLE
 from .runner import compute_de_export, run_protocol
 from .sources import SOURCES
 from .types import Protocol, RunConfig
 
 
+def _concrete(p: Protocol) -> Protocol:
+    """A tunable protocol at its default value; a fixed protocol unchanged."""
+    return p.resolve(p.param.default) if p.parameterised else p
+
+
 def _resolve_token(token: str) -> list[Protocol]:
     if token == "all":
-        return list(PROTOCOL_TABLE) + [t.build(t.default) for t in TEMPLATE_TABLE]
+        return [_concrete(p) for p in TABLE]
     if token in GROUPS:
-        return ([p for p in PROTOCOL_TABLE if p.group == token]
-                + [t.build(t.default) for t in TEMPLATE_TABLE if t.group == token])
-    if "=" in token:                                     # a template with a value, e.g. mse_top_k=30
+        return [_concrete(p) for p in TABLE if p.group == token]
+    if "=" in token:                                     # a tunable protocol with a value, e.g. mse_top_k=30
         name, _, value = token.partition("=")
-        if name not in TEMPLATES:
-            raise SystemExit(f"unknown parameterised protocol {name!r}; try `epps list protocols`")
-        t = TEMPLATES[name]
-        return [t.build(t.cast(value))]
-    if token in PROTOCOLS:
-        return [PROTOCOLS[token]]
-    if token in TEMPLATES:                               # a template with no value -> its default
-        t = TEMPLATES[token]
-        return [t.build(t.default)]
-    raise SystemExit(f"unknown protocol {token!r}; try `epps list protocols`")
+        p = PROTOCOLS.get(name)
+        if p is None or not p.parameterised:
+            raise SystemExit(f"unknown tunable protocol {name!r}; try `epps list protocols`")
+        return [p.resolve(p.param.cast(value))]
+    p = PROTOCOLS.get(token)
+    if p is None:
+        raise SystemExit(f"unknown protocol {token!r}; try `epps list protocols`")
+    return [_concrete(p)]
 
 
 def resolve_protocols(specs: list[str]) -> list[Protocol]:
@@ -98,9 +100,9 @@ def cmd_list(args) -> None:
         return [fmt(n, registry.meta(n)) for n in registry.names()]
 
     if args.what == "protocols":
-        lines = [f"{p.name:24s} ({p.group}, {p.representation}, space={p.space})" for p in PROTOCOL_TABLE]
-        lines += [f"{t.name:24s} ({t.group}, {t.representation}, {t.param.name}=…)"
-                  for t in TEMPLATE_TABLE]
+        def knob(p):
+            return f"{p.param.name}=…" if p.parameterised else f"space={p.space}"
+        lines = [f"{p.name:24s} ({p.group}, {p.representation}, {knob(p)})" for p in TABLE]
     elif args.what == "de-methods":
         lines = reg(DE_METHODS, lambda n, m: f"{n:10s} — {m.get('description', '')}")
     elif args.what == "spaces":

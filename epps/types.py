@@ -1,7 +1,8 @@
 """Core dataclasses shared across the package."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from functools import partial
 from typing import Callable, Optional
 
 import numpy as np
@@ -38,8 +39,25 @@ class DEResult:
 
 
 @dataclass(frozen=True)
+class Param:
+    """A protocol's tunable knob — how a CLI value (``k=30``, ``padj=0.05``) is cast,
+    defaulted, and applied. ``space`` maps the value to a feature-space name; when it is
+    ``None`` the value is passed straight to the metric as a keyword argument.
+    """
+
+    name: str
+    cast: Callable
+    default: float
+    space: Optional[Callable] = None
+
+
+@dataclass(frozen=True)
 class Protocol:
     """An evaluation protocol: a pure metric plus its data and control wiring.
+
+    Set ``param`` to make the protocol *tunable* — its feature space (or a metric argument)
+    is then chosen per run from a CLI value, e.g. ``-p mse_top_k=30``; with no value the
+    parameter's default is used. Leave ``param`` unset for a fully-specified protocol.
 
     ``better`` and ``perfect`` describe the metric's score scale and are independent:
 
@@ -69,6 +87,20 @@ class Protocol:
     positive: str = "auto"
     negative: str = "auto"
     group: str = ""
+    param: Optional[Param] = None
+
+    @property
+    def parameterised(self) -> bool:
+        return self.param is not None
+
+    def resolve(self, value) -> "Protocol":
+        """Concrete protocol for a tunable one at ``value`` (sets the space or metric arg)."""
+        suffix = f"{value:g}" if isinstance(value, float) else str(value)
+        name = f"{self.name}={suffix}"
+        if self.param.space is not None:
+            return replace(self, name=name, space=self.param.space(value), param=None)
+        metric = partial(self.metric, **{self.param.name: value})
+        return replace(self, name=name, metric=metric, param=None)
 
 
 @dataclass(frozen=True)
