@@ -1,85 +1,117 @@
+[build-system]
+build-backend = "hatchling.build"
+requires = [ "hatchling" ]
+
 [project]
 name = "scperteval"
 version = "0.1.0"
 description = "Evaluation Protocols for Perturbation Studies: per-metric DRF/BDS calibration on a single preprocessed dataset."
-requires-python = ">=3.11"
-dependencies = [
-    "anndata",
-    "scanpy",
-    "numpy",
-    "scipy",
-    "scikit-learn",
-    "pandas",
-    "geomloss",
-    "torch",
-    "illico",
-    "h5py",
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [
+  { name = "Zach Boldyga" },
 ]
+requires-python = ">=3.11"
+classifiers = [
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+]
+dependencies = [
+  "anndata",
+  "geomloss",
+  "h5py",
+  "illico",
+  "numpy",
+  "pandas",
+  "scanpy",
+  "scikit-learn",
+  "scipy",
+  "torch",
+]
+urls.Documentation = "https://scperteval.readthedocs.io/"
+urls.Homepage = "https://github.com/Virtual-Cell-Research-Community/scPertEval"
+urls.Source = "https://github.com/Virtual-Cell-Research-Community/scPertEval"
+scripts.scperteval = "scperteval.cli:main"
 
 [dependency-groups]
-lint = [
-    "ruff",
-    "mypy",
-    "pyright",
-]
 dev = [
-    { include-group = "lint" },
+  { include-group = "docs" },
+  { include-group = "lint" },
+]
+docs = [
+  "ipykernel",
+  "ipython",
+  "myst-nb>=1.1",
+  "pandas",
+  "sphinx>=8.1",
+  "sphinx-autobuild>=2025.8.25",
+  "sphinx-autodoc-typehints",
+  "sphinx-book-theme>=1",
+  "sphinx-copybutton",
+  "sphinx-design",
+  "sphinxcontrib-bibtex>=1",
+  "sphinxcontrib-katex",
+  "sphinxext-opengraph",
+]
+lint = [
+  "mypy",
+  "pyright",
+  "ruff",
 ]
 
-[project.scripts]
-scperteval = "scperteval.cli:main"
-
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/scperteval"]
+[tool.hatch]
+build.targets.wheel.packages = [ "src/scperteval" ]
 
 [tool.ruff]
-line-length = 120
-src = ["src"]
-extend-include = ["*.ipynb"]
-extend-exclude = ["deprecated"]
 target-version = "py311"
+line-length = 120
+src = [ "src" ]
+extend-include = [ "*.ipynb" ]
 format.docstring-code-format = true
 lint.select = [
-    "B",    # flake8-bugbear — common bug patterns (mutable defaults, unused loop vars…)
-    "BLE",  # flake8-blind-except — catch bare `except Exception`
-    "C4",   # flake8-comprehensions — idiomatic list/dict/set comprehensions
-    "D",    # pydocstyle — numpy docstring convention
-    "E",    # pycodestyle errors (E722 bare except, E731 lambda assign, E741 ambiguous names…)
-    "F",    # Pyflakes (unused imports F401, undefined names, unused variables…)
-    "I",    # isort — consistent import ordering
-    "PTH",  # flake8-use-pathlib — replace os.path.* and open() with pathlib equivalents
-    "RUF",  # Ruff-specific — list unpacking, quadratic sum, unused unpacked vars…
-    "SIM",  # flake8-simplify — simplify if/else, dict.keys() iteration…
-    "UP",   # pyupgrade — modern Python syntax (UP006 built-in generics, UP007 x | None…)
-    "W",    # pycodestyle warnings (W291 trailing whitespace, W605 invalid escape sequence…)
+  "B",   # flake8-bugbear — common bug patterns (mutable defaults, unused loop vars…)
+  "BLE", # flake8-blind-except — catch bare `except Exception`
+  "C4",  # flake8-comprehensions — idiomatic list/dict/set comprehensions
+  "D",   # pydocstyle — numpy docstring convention
+  "E",   # pycodestyle errors (E722 bare except, E731 lambda assign, E741 ambiguous names…)
+  "F",   # Pyflakes (unused imports F401, undefined names, unused variables…)
+  "I",   # isort — consistent import ordering
+  "PTH", # flake8-use-pathlib — replace os.path.* and open() with pathlib equivalents
+  "RUF", # Ruff-specific — list unpacking, quadratic sum, unused unpacked vars…
+  "SIM", # flake8-simplify — simplify if/else, dict.keys() iteration…
+  "UP",  # pyupgrade — modern Python syntax (UP006 built-in generics, UP007 x | None…)
+  "W",   # pycodestyle warnings (W291 trailing whitespace, W605 invalid escape sequence…)
 ]
 lint.ignore = [
-    "B905", # `zip()` without an explicit `strict=` parameter
-    "C408", # Unnecessary dict(), list() or tuple() calls that can be rewritten as empty literals.
-    "D100", # Missing docstring in public module
-    "D104", # Missing docstring in public package
-    "D105", # Missing docstring in magic methods
-    "D107", # Missing docstring in __init__
-    "D203", # No blank line before class docstring (incompatible with D211)
-    "D213", # Multi-line summary second line (incompatible with D212)
-    "D400", # First line should end with period (breaks single-line docstrings)
-    "D401", # First line in imperative mood
-    "E501",   # line too long — formatter enforces line-length = 120, remaining cases are unfixable strings/comments
-    "RUF001", # ambiguous unicode in strings — intentional (×, –, ➕ used in UI labels and math)
-    "RUF002", # ambiguous unicode in docstrings — same rationale
-    "RUF003", # ambiguous unicode in comments — same rationale
+  "B905",   # `zip()` without an explicit `strict=` parameter
+  "C408",   # Unnecessary dict(), list() or tuple() calls that can be rewritten as empty literals.
+  "D100",   # Missing docstring in public module
+  "D104",   # Missing docstring in public package
+  "D105",   # Missing docstring in magic methods
+  "D107",   # Missing docstring in __init__
+  "D203",   # No blank line before class docstring (incompatible with D211)
+  "D213",   # Multi-line summary second line (incompatible with D212)
+  "D400",   # First line should end with period (breaks single-line docstrings)
+  "D401",   # First line in imperative mood
+  "E501",   # line too long — formatter enforces line-length = 120, remaining cases are unfixable strings/comments
+  "RUF001", # ambiguous unicode in strings — intentional (×, –, ➕ used in UI labels and math)
+  "RUF002", # ambiguous unicode in docstrings — same rationale
+  "RUF003", # ambiguous unicode in comments — same rationale
 ]
-lint.per-file-ignores."*/__init__.py" = ["F401"]
-lint.per-file-ignores."docs/*" = ["I"]
-lint.per-file-ignores."tests/*" = ["D"]
+lint.per-file-ignores."*/__init__.py" = [ "F401" ]
+lint.per-file-ignores."docs/*" = [ "I" ]
+lint.per-file-ignores."tests/*" = [ "D" ]
 lint.pydocstyle.convention = "numpy"
 
 [tool.mypy]
+mypy_path = [ "src" ]
+exclude = [ "^docs/" ]
 ignore_missing_imports = true
-mypy_path = ["src"]
 check_untyped_defs = true
 warn_unreachable = true
+
+[tool.pyright]
+exclude = [ "**/.*", "**/__pycache__", "**/node_modules", ".venv", "docs/**" ]
