@@ -4,6 +4,7 @@ A DE method maps (target cells, reference cells) -> DEResult. The t-test is
 expressed through reusable ``moments`` / ``ttest_from_moments`` helpers so the
 context can cache a shared reference's moments and combine them cheaply.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -48,7 +49,7 @@ def ttest_from_moments(mt, vt, nt, mr, vr, nr) -> DEResult:
     se2 = vt / nt + vr / nr
     with np.errstate(divide="ignore", invalid="ignore"):
         t = (mt - mr) / np.sqrt(se2)
-        df = se2 ** 2 / ((vt / nt) ** 2 / max(nt - 1, 1) + (vr / nr) ** 2 / max(nr - 1, 1))
+        df = se2**2 / ((vt / nt) ** 2 / max(nt - 1, 1) + (vr / nr) ** 2 / max(nr - 1, 1))
     t = np.nan_to_num(t, nan=0.0, posinf=0.0, neginf=0.0)
     df = np.where(np.isfinite(df) & (df > 0), df, 1.0)
     pval = np.nan_to_num(2.0 * stats.t.sf(np.abs(t), df), nan=1.0)
@@ -78,9 +79,17 @@ def de_mwu(target, reference) -> DEResult:
     adata = ad.AnnData(np.vstack([Xt, Xr]).astype(np.float64))
     adata.var_names = genes
     adata.obs["_g"] = ["target"] * nt + ["reference"] * nr
-    df = asymptotic_wilcoxon(adata, is_log1p=True, group_keys="_g", reference="reference",
-                             n_threads=1, alternative="two-sided", use_continuity=True,
-                             tie_correct=True, return_as_scanpy=False)
+    df = asymptotic_wilcoxon(
+        adata,
+        is_log1p=True,
+        group_keys="_g",
+        reference="reference",
+        n_threads=1,
+        alternative="two-sided",
+        use_continuity=True,
+        tie_correct=True,
+        return_as_scanpy=False,
+    )
     sub = df.xs("target", level=0).reindex(genes)  # pyright: ignore[reportAttributeAccessIssue]
     u = sub["statistic"].to_numpy(dtype=np.float64)
     pval = np.nan_to_num(sub["p_value"].to_numpy(dtype=np.float64), nan=1.0)

@@ -1,4 +1,5 @@
 """The comparison reference: a fixed cell sample served leave-one-out."""
+
 from __future__ import annotations
 
 import warnings
@@ -18,8 +19,8 @@ class Reference:
     """
 
     def __init__(self, cells, labels=None, warn_frac: float = 0.10):
-        self.cells = cells          # densified once, (n_cells, n_genes)
-        self.labels = labels        # per-cell perturbation, or None
+        self.cells = cells  # densified once, (n_cells, n_genes)
+        self.labels = labels  # per-cell perturbation, or None
         self.warn_frac = warn_frac
         self._n = len(cells)
         self._warned: set = set()

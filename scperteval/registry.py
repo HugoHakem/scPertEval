@@ -1,4 +1,5 @@
 """A minimal decorator registry for the pluggable building blocks."""
+
 from __future__ import annotations
 
 from typing import Callable
@@ -15,6 +16,7 @@ class Registry:
         def deco(fn: Callable) -> Callable:
             self._items[name] = (fn, meta)
             return fn
+
         return deco
 
     def add(self, name: str, fn: Callable, **meta) -> None:

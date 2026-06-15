@@ -1,4 +1,5 @@
 """Runs one protocol over every perturbation and applies the chosen calibrator."""
+
 from __future__ import annotations
 
 import os
@@ -38,15 +39,21 @@ def run_protocol(p: Protocol, ctx, calibrator: Calibrator):
 def _finalize(p, calibrator, perts, raws_list):
     """Per-perturbation rows + the aggregate, from each perturbation's raw control values."""
     per_pert = [calibrator.per_pert(raws, p) for raws in raws_list]
-    rows = [{"protocol": p.name, "perturbation": pert,
-             **{f"raw_{role}": raws[role] for role in raws},
-             calibrator.name: value}
-            for pert, raws, value in zip(perts, raws_list, per_pert)]
+    rows = [
+        {
+            "protocol": p.name,
+            "perturbation": pert,
+            **{f"raw_{role}": raws[role] for role in raws},
+            calibrator.name: value,
+        }
+        for pert, raws, value in zip(perts, raws_list, per_pert)
+    ]
     return calibrator.aggregate(np.asarray(per_pert, dtype=float)), rows
 
 
 def _run_per_perturbation(p: Protocol, ctx, calibrator: Calibrator, needed: dict):
     """Score one perturbation at a time (across a thread pool), gt vs each control."""
+
     def work(pert):
         ctx.current_pert = pert
         gt = ctx.view(pert, "gt", p)

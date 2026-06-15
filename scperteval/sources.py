@@ -5,6 +5,7 @@ the data. ``provides`` ("cells" or "centroid") drives the runner's compatibility
 check and how the context turns a source into a view. ``description`` is shown by
 ``scperteval list sources``.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -15,46 +16,59 @@ from .registry import Registry
 SOURCES = Registry("source")
 
 
-@SOURCES.register("gt", provides="cells",
-                  description="ground truth — the first half of a perturbation's cells")
+@SOURCES.register("gt", provides="cells", description="ground truth — the first half of a perturbation's cells")
 def src_gt(ctx, pert):
     return ctx.ds.cells(pert, half="first")
 
 
-@SOURCES.register("tech_dup", provides="cells",
-                  description="technical duplicate — the held-out second half (single-cell positive control)")
+@SOURCES.register(
+    "tech_dup",
+    provides="cells",
+    description="technical duplicate — the held-out second half (single-cell positive control)",
+)
 def src_tech_dup(ctx, pert):
     return ctx.ds.cells(pert, half="second")
 
 
-@SOURCES.register("control", provides="cells",
-                  description="non-targeting control cells")
+@SOURCES.register("control", provides="cells", description="non-targeting control cells")
 def src_control(ctx, pert):
     return ctx.ds.control_cells(ctx.cfg.subsample)
 
 
-@SOURCES.register("all_perturbed", provides="cells",
-                  description="all-perturbed reference sample, leave-one-out (single-cell negative control)")
+@SOURCES.register(
+    "all_perturbed",
+    provides="cells",
+    description="all-perturbed reference sample, leave-one-out (single-cell negative control)",
+)
 def src_all_perturbed(ctx, pert):
     return ctx.reference().subset(pert)
 
 
-@SOURCES.register("all_perturbed_mean", provides="centroid",
-                  description="all-perturbed mean, excluding the target — leave-one-out "
-                              "(pseudobulk sibling of all_perturbed; pseudobulk negative control)")
+@SOURCES.register(
+    "all_perturbed_mean",
+    provides="centroid",
+    description="all-perturbed mean, excluding the target — leave-one-out "
+    "(pseudobulk sibling of all_perturbed; pseudobulk negative control)",
+)
 def src_all_perturbed_mean(ctx, pert):
     return ctx.ds.allpert_mean_except(pert)
 
 
-@SOURCES.register("global_mean", provides="centroid",
-                  description="mean of all perturbations — shared baseline for the ranking protocols")
+@SOURCES.register(
+    "global_mean",
+    provides="centroid",
+    description="mean of all perturbations — shared baseline for the ranking protocols",
+)
 def src_global_mean(ctx, pert):
     return ctx.ds.allpert_mean()
 
 
-@SOURCES.register("interpolated", provides="centroid",
-                  description="interpolated duplicate — DE-weighted blend of the held-out half and "
-                              "the dataset mean (pseudobulk positive control)")
+@SOURCES.register(
+    "interpolated",
+    provides="centroid",
+    description="interpolated duplicate — DE-weighted blend of the held-out half and "
+    "the dataset mean (pseudobulk positive control)",
+)
 def src_interpolated(ctx, pert):
     """alpha = 1 - adjusted p per gene (from the run's DE method, vs control); blend toward
     the held-out replicate where the gene is significant, else toward the all-perturbed mean."""

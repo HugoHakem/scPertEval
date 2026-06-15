@@ -1,4 +1,5 @@
 """Human-readable summary plus a per-perturbation CSV named with dataset + time."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -25,8 +26,12 @@ def write_rows(cfg, rows: list, timestamp: str) -> Path:
     out_dir = Path(cfg.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     df = pd.DataFrame(rows)
-    for col, val in (("dataset", Path(cfg.dataset).stem), ("de_method", cfg.de_method),
-                     ("subsample", cfg.subsample), ("seed", cfg.seed)):
+    for col, val in (
+        ("dataset", Path(cfg.dataset).stem),
+        ("de_method", cfg.de_method),
+        ("subsample", cfg.subsample),
+        ("seed", cfg.seed),
+    ):
         df[col] = val
     path = out_dir / f"{Path(cfg.dataset).stem}__{timestamp}__{cfg.output}.csv"
     df.to_csv(path, index=False)
@@ -37,9 +42,16 @@ def write_timing(cfg, timed: list, timestamp: str) -> Path:
     """Write per-protocol wall-clock seconds (one row per protocol)."""
     out_dir = Path(cfg.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    rows = [{"dataset": Path(cfg.dataset).stem, "protocol": p.name,
-             "representation": p.representation, "space": p.space, "seconds": seconds}
-            for p, seconds in timed]
+    rows = [
+        {
+            "dataset": Path(cfg.dataset).stem,
+            "protocol": p.name,
+            "representation": p.representation,
+            "space": p.space,
+            "seconds": seconds,
+        }
+        for p, seconds in timed
+    ]
     path = out_dir / f"{Path(cfg.dataset).stem}__{timestamp}__timing.csv"
     pd.DataFrame(rows).to_csv(path, index=False)
     return path

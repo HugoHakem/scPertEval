@@ -1,5 +1,6 @@
 """The per-run engine: lazily builds and caches the shared building blocks, and
 turns a (perturbation, source) into the exact view a protocol consumes."""
+
 from __future__ import annotations
 
 import threading
@@ -66,8 +67,9 @@ class Context:
             self._moments("control", None)
         if any(p.space == "pca50" for p in protocols):
             self.pca()
-        for space in {p.space for p in protocols
-                      if p.representation == "population" and SPACES.meta(p.space).get("global_space")}:
+        for space in {
+            p.space for p in protocols if p.representation == "population" and SPACES.meta(p.space).get("global_space")
+        }:
             self.ref_projection(space)
 
     def view(self, pert: str, source: str, p: Protocol):
@@ -110,11 +112,9 @@ class Context:
         key = (self._mom_key(source, pert), self._mom_key(reference, pert), method)
         if key not in self._de:
             if method == "t-test":
-                self._de[key] = ttest_from_moments(*self._moments(source, pert),
-                                                    *self._moments(reference, pert))
+                self._de[key] = ttest_from_moments(*self._moments(source, pert), *self._moments(reference, pert))
             else:
-                self._de[key] = DE_METHODS[method](self._de_cells(source, pert),
-                                                   self._de_cells(reference, pert))
+                self._de[key] = DE_METHODS[method](self._de_cells(source, pert), self._de_cells(reference, pert))
         return self._de[key]
 
     def _moments(self, source, pert):

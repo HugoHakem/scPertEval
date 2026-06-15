@@ -12,6 +12,7 @@ Every metric is implemented in full here; only external numerical libraries (num
 scikit-learn, geomloss) are relied upon. So a metric is completely defined by its function
 below plus its row in ``table.py`` — nothing is hidden behind another layer.
 """
+
 from __future__ import annotations
 
 import numpy as np

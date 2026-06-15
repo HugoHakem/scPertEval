@@ -1,4 +1,5 @@
 """Thin wrapper over a preprocessed AnnData with a perturbation column."""
+
 from __future__ import annotations
 
 import zlib

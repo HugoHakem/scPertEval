@@ -7,6 +7,7 @@ gene-subset space densifies only its subset. The parameterised families
 templates); the default instances created at import are what ``scperteval list spaces``
 shows. ``description`` is shown by ``scperteval list spaces``.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -50,8 +51,9 @@ def top_space(k: int) -> str:
     """top-k genes by |ground-truth effect size| (registered on demand)."""
     name = f"top_{k}"
     if name not in SPACES:
-        register_de_space(name, field="score", top=k,
-                          description=f"top {k} genes by ground-truth effect size, per perturbation")
+        register_de_space(
+            name, field="score", top=k, description=f"top {k} genes by ground-truth effect size, per perturbation"
+        )
     return name
 
 
@@ -59,8 +61,12 @@ def degs_space(padj: float) -> str:
     """ground-truth DEGs at adjusted p < padj (registered on demand)."""
     name = f"degs_{padj:g}"
     if name not in SPACES:
-        register_de_space(name, field="pvalue_adj", threshold=(lambda v, p=padj: v < p),
-                          description=f"ground-truth DEGs at adjusted p < {padj:g}, per perturbation")
+        register_de_space(
+            name,
+            field="pvalue_adj",
+            threshold=(lambda v, p=padj: v < p),
+            description=f"ground-truth DEGs at adjusted p < {padj:g}, per perturbation",
+        )
     return name
 
 
@@ -68,8 +74,12 @@ def pca_space(k: int) -> str:
     """top-k principal components (registered on demand)."""
     name = f"pca_{k}"
     if name not in SPACES:
-        SPACES.add(name, lambda X, ctx, pert, k=k: ctx.pca(k).transform(to_dense(X))[:, :k],
-                   global_space=True, description=f"top {k} principal components (fit on the dataset)")
+        SPACES.add(
+            name,
+            lambda X, ctx, pert, k=k: ctx.pca(k).transform(to_dense(X))[:, :k],
+            global_space=True,
+            description=f"top {k} principal components (fit on the dataset)",
+        )
     return name
 
 
