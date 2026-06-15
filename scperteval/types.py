@@ -107,6 +107,7 @@ class Protocol:
 
     def resolve(self, value) -> "Protocol":
         """Concrete protocol for a tunable one at ``value`` (sets the space or metric arg)."""
+        assert self.param is not None
         suffix = f"{value:g}" if isinstance(value, float) else str(value)
         name = f"{self.name}={suffix}"
         if self.param.space is not None:

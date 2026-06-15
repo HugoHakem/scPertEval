@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import warnings
 
+import numpy as np
+
 
 class Reference:
     """A comparison sample of cells (the all-perturbed subsample, or non-targeting
@@ -22,7 +24,7 @@ class Reference:
         self._n = len(cells)
         self._warned: set = set()
 
-    def keep(self, exclude) -> "object":
+    def keep(self, exclude) -> np.ndarray | None:
         """Boolean mask of the cells to keep, or None when nothing is excluded."""
         if self.labels is None:
             return None

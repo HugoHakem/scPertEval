@@ -81,7 +81,7 @@ def de_mwu(target, reference) -> DEResult:
     df = asymptotic_wilcoxon(adata, is_log1p=True, group_keys="_g", reference="reference",
                              n_threads=1, alternative="two-sided", use_continuity=True,
                              tie_correct=True, return_as_scanpy=False)
-    sub = df.xs("target", level=0).reindex(genes)
+    sub = df.xs("target", level=0).reindex(genes)  # pyright: ignore[reportAttributeAccessIssue]
     u = sub["statistic"].to_numpy(dtype=np.float64)
     pval = np.nan_to_num(sub["p_value"].to_numpy(dtype=np.float64), nan=1.0)
     cliff = 2.0 * u / (nt * nr) - 1.0

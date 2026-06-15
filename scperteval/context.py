@@ -3,8 +3,12 @@ turns a (perturbation, source) into the exact view a protocol consumes."""
 from __future__ import annotations
 
 import threading
+from typing import TYPE_CHECKING
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from sklearn.decomposition import PCA
 
 from .blocks.de import DE_METHODS, moments, ttest_from_moments
 from .blocks.spaces import SPACES
@@ -32,12 +36,12 @@ class Context:
         self._de: dict = {}
         self._mom: dict = {}
         self._weights: dict = {}
-        self._pca = None
+        self._pca: PCA | None = None
         self._pca_k = 0
-        self._control_mean = None
-        self._reference = None
+        self._control_mean: np.ndarray | None = None
+        self._reference: Reference | None = None
         self._ref_proj: dict = {}
-        self._ref_sums = None
+        self._ref_sums: tuple[np.ndarray, np.ndarray, int] | None = None
 
     @property
     def perturbations(self):

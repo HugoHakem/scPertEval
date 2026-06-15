@@ -27,11 +27,19 @@ def _field(de, name):
 
 
 def register_de_space(name, field, top=None, threshold=None, description=""):
-    """Register a DE-derived gene subset selected from a field of the GT DEResult."""
+    """Register a DE-derived gene subset selected from a field of the GT DEResult.
+
+    Exactly one of ``top`` (select top-k by |value|) or ``threshold`` (a callable
+    returning a boolean mask) must be provided.
+    """
 
     def space(X, ctx, pert):
         values = _field(ctx.de(pert, "gt"), field)
-        keep = np.argsort(-np.abs(values))[:top] if top is not None else np.where(threshold(values))[0]
+        if top is not None:
+            keep = np.argsort(-np.abs(values))[:top]
+        else:
+            assert threshold is not None, "either top or threshold must be provided"
+            keep = np.where(threshold(values))[0]
         return to_dense(X[:, keep])
 
     SPACES.add(name, space, description=description)

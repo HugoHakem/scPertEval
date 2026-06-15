@@ -8,6 +8,7 @@ with no value the family default is used. To add a protocol, write a metric in
 from __future__ import annotations
 
 from functools import partial
+from typing import Any
 
 from ..blocks.spaces import degs_space, pca_space, top_space
 from ..types import Param, Protocol
@@ -22,13 +23,13 @@ overlap_k = Param("k", int, 50)                           # passed straight to d
 
 
 # --- shared wiring bundles (controls + score scale), splatted into rows with ** ---
-_PB = dict(group="pseudobulk", positive="interpolated", negative="all_perturbed_mean")
-_PB_CTRL = dict(group="pseudobulk", positive="interpolated", negative="control")
-_LOWER = dict(better="lower", perfect=0.0)
-_DIST = dict(group="distributional", positive="tech_dup", negative="all_perturbed", better="lower", perfect=0.0)
-_DE = dict(group="de", positive="tech_dup", negative="all_perturbed", reference="all_perturbed",
+_PB : dict[str, Any] = dict(group="pseudobulk", positive="interpolated", negative="all_perturbed_mean")
+_PB_CTRL : dict[str, Any] = dict(group="pseudobulk", positive="interpolated", negative="control")
+_LOWER : dict[str, Any] = dict(better="lower", perfect=0.0)
+_DIST : dict[str, Any] = dict(group="distributional", positive="tech_dup", negative="all_perturbed", better="lower", perfect=0.0)
+_DE : dict[str, Any] = dict(group="de", positive="tech_dup", negative="all_perturbed", reference="all_perturbed",
            neg_reference="control", better="higher", perfect=1.0)
-_RANK = dict(group="pseudobulk", positive="interpolated", negative="global_mean", better="lower", perfect=0.0)
+_RANK : dict[str, Any] = dict(group="pseudobulk", positive="interpolated", negative="global_mean", better="lower", perfect=0.0)
 
 
 TABLE = [

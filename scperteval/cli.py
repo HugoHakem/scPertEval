@@ -18,7 +18,7 @@ from .types import Protocol, RunConfig
 
 def _concrete(p: Protocol) -> Protocol:
     """A tunable protocol at its default value; a fixed protocol unchanged."""
-    return p.resolve(p.param.default) if p.parameterised else p
+    return p.resolve(p.param.default) if p.parameterised else p  # type: ignore[union-attr]
 
 
 def _resolve_token(token: str) -> list[Protocol]:
@@ -31,7 +31,7 @@ def _resolve_token(token: str) -> list[Protocol]:
         p = PROTOCOLS.get(name)
         if p is None or not p.parameterised:
             raise SystemExit(f"unknown tunable protocol {name!r}; try `scperteval list protocols`")
-        return [p.resolve(p.param.cast(value))]
+        return [p.resolve(p.param.cast(value))]  # type: ignore[union-attr]
     p = PROTOCOLS.get(token)
     if p is None:
         raise SystemExit(f"unknown protocol {token!r}; try `scperteval list protocols`")
@@ -113,6 +113,8 @@ def cmd_list(args) -> None:
         lines = reg(SOURCES, lambda n, m: f"{n:14s} ({m.get('provides')}) — {m.get('description', '')}")
     elif args.what == "calibrators":
         lines = [f"{n:6s} — {c.description}" for n, c in CALIBRATORS.items()]
+    else:
+        raise AssertionError(f"unexpected list target: {args.what!r}")
     print("\n".join(lines))
 
 
