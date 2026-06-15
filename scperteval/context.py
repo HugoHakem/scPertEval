@@ -25,7 +25,10 @@ class Context:
         self.ds = dataset
         self.cfg = cfg
         self._local = threading.local()
-        self._init_lock = threading.Lock()
+        # Reentrant: several lazy initialisers (e.g. _ensure_ref_sums, ref_projection)
+        # call reference() while already holding this lock, which a plain Lock would
+        # self-deadlock on.
+        self._init_lock = threading.RLock()
         self._de: dict = {}
         self._mom: dict = {}
         self._weights: dict = {}
