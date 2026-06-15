@@ -45,9 +45,11 @@ TABLE = [
     Protocol("pearson_pert_top_k", M.pearson, representation="centroid", centering="allpert", param=top_k, **_PB_CTRL),
     Protocol("pearson_pert_degs_padj", M.pearson, representation="centroid", centering="allpert", param=degs_padj, **_PB_CTRL),
 
-    # --- cross-perturbation retrieval rank ---
-    Protocol("rank", partial(M.rank_retrieval, transpose=False), representation="ranking", **_RANK),
-    Protocol("transpose_rank", partial(M.rank_retrieval, transpose=True), representation="ranking", **_RANK),
+    # --- cross-perturbation retrieval rank (dataset-wide over centroids) ---
+    Protocol("rank", partial(M.rank_retrieval, transpose=False),
+             representation="centroid", scope="dataset", **_RANK),
+    Protocol("transpose_rank", partial(M.rank_retrieval, transpose=True),
+             representation="centroid", scope="dataset", **_RANK),
 
     # --- distributional: distances between cell populations (positive = technical duplicate) ---
     Protocol("unbiased_mmd_median_top_k", M.unbiased_mmd_median, representation="population", param=top_k, **_DIST),

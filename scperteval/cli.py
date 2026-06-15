@@ -1,4 +1,4 @@
-"""EPPS command-line interface."""
+"""scPertEval command-line interface."""
 from __future__ import annotations
 
 import argparse
@@ -30,11 +30,11 @@ def _resolve_token(token: str) -> list[Protocol]:
         name, _, value = token.partition("=")
         p = PROTOCOLS.get(name)
         if p is None or not p.parameterised:
-            raise SystemExit(f"unknown tunable protocol {name!r}; try `epps list protocols`")
+            raise SystemExit(f"unknown tunable protocol {name!r}; try `scperteval list protocols`")
         return [p.resolve(p.param.cast(value))]
     p = PROTOCOLS.get(token)
     if p is None:
-        raise SystemExit(f"unknown protocol {token!r}; try `epps list protocols`")
+        raise SystemExit(f"unknown protocol {token!r}; try `scperteval list protocols`")
     return [_concrete(p)]
 
 
@@ -100,9 +100,11 @@ def cmd_list(args) -> None:
         return [fmt(n, registry.meta(n)) for n in registry.names()]
 
     if args.what == "protocols":
-        def knob(p):
-            return f"{p.param.name}=…" if p.parameterised else f"space={p.space}"
-        lines = [f"{p.name:24s} ({p.group}, {p.representation}, {knob(p)})" for p in TABLE]
+        def descr(p):
+            scope = "" if p.scope == "perturbation" else f", {p.scope}-wide"
+            knob = f"{p.param.name}=…" if p.parameterised else f"space={p.space}"
+            return f"{p.group}, {p.representation}{scope}, {knob}"
+        lines = [f"{p.name:24s} ({descr(p)})" for p in TABLE]
     elif args.what == "de-methods":
         lines = reg(DE_METHODS, lambda n, m: f"{n:10s} — {m.get('description', '')}")
     elif args.what == "spaces":
@@ -115,7 +117,7 @@ def cmd_list(args) -> None:
 
 
 def main(argv=None) -> None:
-    parser = argparse.ArgumentParser(prog="epps", description=__doc__)
+    parser = argparse.ArgumentParser(prog="scperteval", description=__doc__)
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     run = sub.add_parser("run", help="compute protocol calibration for one dataset")

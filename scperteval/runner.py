@@ -23,58 +23,68 @@ def resolve_controls(p: Protocol, cfg) -> dict:
 
 
 def run_protocol(p: Protocol, ctx, calibrator: Calibrator):
-    """Return (aggregate scores, per-perturbation rows, wall-clock seconds) for one protocol."""
-    if p.representation == "ranking":
-        return _run_ranking(p, ctx, calibrator)
+    """Return (aggregate scores, per-perturbation rows, wall-clock seconds) for one protocol.
+
+    ``scope`` chooses the loop: per-perturbation protocols score one perturbation at a time;
+    dataset-scope protocols hand the metric every perturbation's datapoint at once.
+    """
     roles = resolve_controls(p, ctx.cfg)
     needed = {role: roles[role] for role in calibrator.requires}
     _check_sources(p, needed)
+    run = _run_dataset if p.scope == "dataset" else _run_per_perturbation
+    return run(p, ctx, calibrator, needed)
 
+
+def _finalize(p, calibrator, perts, raws_list):
+    """Per-perturbation rows + the aggregate, from each perturbation's raw control values."""
+    per_pert = [calibrator.per_pert(raws, p) for raws in raws_list]
+    rows = [{"protocol": p.name, "perturbation": pert,
+             **{f"raw_{role}": raws[role] for role in raws},
+             calibrator.name: value}
+            for pert, raws, value in zip(perts, raws_list, per_pert)]
+    return calibrator.aggregate(np.asarray(per_pert, dtype=float)), rows
+
+
+def _run_per_perturbation(p: Protocol, ctx, calibrator: Calibrator, needed: dict):
+    """Score one perturbation at a time (across a thread pool), gt vs each control."""
     def work(pert):
         ctx.current_pert = pert
         gt = ctx.view(pert, "gt", p)
-        raws = {role: p.metric(gt, ctx.view(pert, src, p), ctx) for role, src in needed.items()}
-        return pert, raws, calibrator.per_pert(raws, p)
+        return {role: p.metric(gt, ctx.view(pert, src, p), ctx) for role, src in needed.items()}
 
+    perts = ctx.perturbations
     start = perf_counter()
     with ThreadPoolExecutor(max_workers=n_workers(ctx.cfg)) as pool:
-        results = list(pool.map(work, ctx.perturbations))
+        raws_list = list(pool.map(work, perts))
     seconds = perf_counter() - start
-
-    rows, per_pert = [], []
-    for pert, raws, value in results:
-        per_pert.append(value)
-        rows.append({"protocol": p.name, "perturbation": pert,
-                     **{f"raw_{role}": raws[role] for role in needed},
-                     calibrator.name: value})
-    return calibrator.aggregate(np.asarray(per_pert, dtype=float)), rows, seconds
+    agg, rows = _finalize(p, calibrator, perts, raws_list)
+    return agg, rows, seconds
 
 
-def _run_ranking(p: Protocol, ctx, calibrator: Calibrator):
-    """Cross-perturbation ranking protocols: build the candidate/GT profile matrices
-    over all perturbations once, then score each perturbation's retrieval rank.
+def _run_dataset(p: Protocol, ctx, calibrator: Calibrator, needed: dict):
+    """Dataset-scope protocols: build every perturbation's gt and control datapoints, hand
+    the metric the full lists at once, then read off each perturbation's score.
 
     Perturbations are treated as a single group (these datasets are single-covariate);
-    drf instead ranks within each covariate group."""
-    roles = resolve_controls(p, ctx.cfg)
-    needed = {role: roles[role] for role in calibrator.requires}
+    drf instead ranks within each covariate group.
+    """
     perts = ctx.perturbations
 
+    def collect(source):
+        out = []
+        for pert in perts:
+            ctx.current_pert = pert
+            out.append(ctx.view(pert, source, p))
+        return out
+
     start = perf_counter()
-    gt = np.vstack([ctx.centroid(pert, "gt", p.centering) for pert in perts])
-    scores = {role: p.metric(np.vstack([ctx.centroid(pert, src, p.centering) for pert in perts]), gt)
-              for role, src in needed.items()}
+    gt = collect("gt")
+    scores = {role: p.metric(gt, collect(src), ctx) for role, src in needed.items()}
     seconds = perf_counter() - start
 
-    rows, per_pert = [], []
-    for i, pert in enumerate(perts):
-        raws = {role: float(scores[role][i]) for role in needed}
-        value = calibrator.per_pert(raws, p)
-        per_pert.append(value)
-        rows.append({"protocol": p.name, "perturbation": pert,
-                     **{f"raw_{role}": raws[role] for role in needed},
-                     calibrator.name: value})
-    return calibrator.aggregate(np.asarray(per_pert, dtype=float)), rows, seconds
+    raws_list = [{role: float(scores[role][i]) for role in needed} for i in range(len(perts))]
+    agg, rows = _finalize(p, calibrator, perts, raws_list)
+    return agg, rows, seconds
 
 
 def compute_de_export(ctx, methods):

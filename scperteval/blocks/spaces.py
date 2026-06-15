@@ -4,8 +4,8 @@ Spaces receive the raw (possibly sparse) cells and return a dense array, so a
 gene-subset space densifies only its subset. The parameterised families
 ``top_<k>`` / ``pca_<k>`` / ``degs_<padj>`` are registered on demand by the
 ``top_space`` / ``pca_space`` / ``degs_space`` factories (used by the protocol
-templates); the default instances created at import are what ``epps list spaces``
-shows. ``description`` is shown by ``epps list spaces``.
+templates); the default instances created at import are what ``scperteval list spaces``
+shows. ``description`` is shown by ``scperteval list spaces``.
 """
 from __future__ import annotations
 
@@ -65,7 +65,7 @@ def pca_space(k: int) -> str:
     return name
 
 
-# Default instances — also what `epps list spaces` shows.
+# Default instances — also what `scperteval list spaces` shows.
 top_space(50)
 pca_space(50)
 degs_space(0.05)

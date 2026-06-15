@@ -1,12 +1,12 @@
-# EPPS — Evaluation Protocols for Perturbation Sequencing
+# scPertEval — Evaluation Protocols for Perturbation Sequencing
 
-EPPS is a command-line tool for **experimenting with and sharing reference implementations of
+scPertEval is a command-line tool for **experimenting with and sharing reference implementations of
 evaluation protocols** in single-cell perturbation studies. 
 
 Evaluating predictions across a dataset's
 perturbations reduces to a single question: how different is one group of cells from another? To answer this, an **evaluation protocol** is defined: a specific formulation of a metric, along with some representation of the perturbation data fed to the metric. However, there are a multitude of possibilities -- many already reflected in the literature -- and it can be challenging to compare and contrast protocols across the field and ultimately choose the right approach for a given dataset and problem space. 
 
-EPPS renders each protocol as a short, readable building block to run, read, reuse, and contribute back -- a place for
+scPertEval renders each protocol as a short, readable building block to run, read, reuse, and contribute back -- a place for
 collaboration and alignment in the field. Run the tool by specifying a dataset, one or more protocols, and a method of differential expression; 
 the tool outputs calibration data: the **Dynamic Range Fraction (DRF)** and the 
 **Bound Discrimination Score (BDS)** — quantifying how well the protocol separates real perturbation
@@ -17,41 +17,41 @@ Our accompanying publiciation: TODO_LINK_HERE
 ## Install
 
 ```bash
-pip install -e .          # provides the `epps` command
+pip install -e .          # provides the `scperteval` command
 ```
 
 ## Run it
 
 ```bash
 # protocols by name — including parameterised ones (set k / padj per protocol)
-epps run data/wessels23.h5ad -p pearson_ctrl,unbiased_mmd_median_pca_k=20,de_overlap_k=10 --de-method t-test
+scperteval run data/wessels23.h5ad -p pearson_ctrl,unbiased_mmd_median_pca_k=20,de_overlap_k=10 --de-method t-test
 
 # a parameterised protocol with no value uses its default (k=50, padj=0.05)
-epps run data/wessels23.h5ad -p unbiased_mmd_median_top_k --de-method MWU
+scperteval run data/wessels23.h5ad -p unbiased_mmd_median_top_k --de-method MWU
 
 # a whole group, or everything (parameterised protocols use their defaults)
-epps run data/wessels23.h5ad -p distributional --de-method MWU
-epps run data/wessels23.h5ad -p all --de-method t-test
+scperteval run data/wessels23.h5ad -p distributional --de-method MWU
+scperteval run data/wessels23.h5ad -p all --de-method t-test
 
 # DRF calibration only (compute DRF only; exclude BDS)
-epps run data/wessels23.h5ad -p pearson_ctrl --de-method t-test --output drf
+scperteval run data/wessels23.h5ad -p pearson_ctrl --de-method t-test --output drf
 
 # DE only — writes per-gene statistic + adjusted p to HDF5 (no protocol calibration)
 # Provided as a convenience, since DE methods are tightly coupled with some evaluation protocols
-epps de data/wessels23.h5ad --methods MWU
+scperteval de data/wessels23.h5ad --methods MWU
 
 # discover what's available
-epps list protocols        # also: de-methods | spaces | sources | calibrators
+scperteval list protocols        # also: de-methods | spaces | sources | calibrators
 ```
 
 Each run prints a summary table and writes a per-perturbation CSV
 `<dataset>__<timestamp>__drf.csv` (the raw control values and the calibrated score for
 every perturbation). `--profile` adds a per-protocol wall-clock timing CSV.
 
-<details><summary><code>epps run --help</code></summary>
+<details><summary><code>scperteval run --help</code></summary>
 
 ```
-usage: epps run [-h] [-p PROTOCOLS] [--de-method {MWU,t-test}]
+usage: scperteval run [-h] [-p PROTOCOLS] [--de-method {MWU,t-test}]
                 [--subsample SUBSAMPLE] [--seed SEED] [--positive POSITIVE]
                 [--negative NEGATIVE] [--output {drf,bds}] [--out-dir OUT_DIR]
                 [--workers WORKERS] [--perturbation-key PERTURBATION_KEY]
@@ -72,18 +72,51 @@ usage: epps run [-h] [-p PROTOCOLS] [--de-method {MWU,t-test}]
 ```
 </details>
 
+## Use it from Python
+
+Install with `pip install scperteval` (or, from this repo,
+`pip install "scperteval @ git+https://github.com/Virtual-Cell-Research-Community/scPertEval.git"`).
+The simplest path mirrors the CLI — call it via subprocess, exactly as the figure notebook does:
+
+```python
+import subprocess, sys
+
+subprocess.run([sys.executable, "-m", "scperteval", "run", "data/wessels23.h5ad",
+                "-p", "all", "--de-method", "t-test", "--out-dir", "results"], check=True)
+# -> results/wessels23__<timestamp>__drf.csv  (raw control values + calibrated DRF per perturbation)
+```
+
+Or drive it as a library for programmatic results:
+
+```python
+from scperteval.cli import resolve_protocols
+from scperteval.types import RunConfig
+from scperteval.dataset import Dataset
+from scperteval.context import Context
+from scperteval.runner import run_protocol
+from scperteval.calibrators import CALIBRATORS
+
+protocols = resolve_protocols(["mse", "unbiased_mmd_median_top_k=50", "de_auroc"])  # or ["all"], a group, etc.
+cfg = RunConfig(dataset="data/wessels23.h5ad", protocols=[p.name for p in protocols], de_method="t-test")
+ctx = Context(Dataset.load(cfg.dataset, cfg), cfg)
+ctx.warm(protocols)
+for p in protocols:
+    aggregate, rows, seconds = run_protocol(p, ctx, CALIBRATORS["drf"])
+    print(p.name, aggregate)          # e.g. mse {'mean': 0.333, 'median': 0.358}
+```
+
 ## Look up an Evaluation Protocol
 
 Two files define each protocol:
 
-- **[`epps/protocols/metrics.py`](epps/protocols/metrics.py)** — the metric, as a
+- **[`scperteval/protocols/metrics.py`](scperteval/protocols/metrics.py)** — the metric, as a
   pure function of the ground truth and a `prediction` (whichever control is being scored,
   positive or negative). e.g. `mse`, `mmd`, `de_auprc`:
   ```python
   def mse(gt, prediction, ctx):
       return float(np.mean((gt - prediction) ** 2))
   ```
-- **[`epps/protocols/table.py`](epps/protocols/table.py)** — one row wiring that function
+- **[`scperteval/protocols/table.py`](scperteval/protocols/table.py)** — one row wiring that function
   to its data: the data representation it receives (`representation`), feature space,
   reference centering, positive/negative controls, which direction is `better`
   (`"higher"`/`"lower"`), and the `perfect` score:
@@ -104,24 +137,24 @@ broken down, then a few richer examples.
 
 Here is a complete new protocol: mean absolute error on the standard pseudobulk profiles.
 
-1. Add a pure function to [`epps/protocols/metrics.py`](epps/protocols/metrics.py):
+1. Add a pure function to [`scperteval/protocols/metrics.py`](scperteval/protocols/metrics.py):
    ```python
    def mae(gt, prediction, ctx):
        return float(np.mean(np.abs(gt - prediction)))
    ```
    Every metric function has this signature. `gt` is one perturbation's ground-truth
-   profile; `prediction` is a control being compared against it (EPPS calls the function
+   profile; `prediction` is a control being compared against it (scPertEval calls the function
    once for the positive control and once for the negative). `ctx` is the dataset context,
    needed by only a few metrics — ignore it otherwise. Return a single number.
 
-2. Add a row to [`epps/protocols/table.py`](epps/protocols/table.py):
+2. Add a row to [`scperteval/protocols/table.py`](scperteval/protocols/table.py):
    ```python
    Protocol("mae", M.mae, representation="centroid",
             positive="interpolated", negative="all_perturbed_mean",
             better="lower", perfect=0.0)
    ```
 
-Run it with `epps run data.h5ad -p mae`. That is the whole protocol: MAE between each
+Run it with `scperteval run data.h5ad -p mae`. That is the whole protocol: MAE between each
 perturbation's pseudobulk profile and its positive and negative controls, scored as
 lower-is-better toward a perfect of 0.
 
@@ -132,7 +165,8 @@ That row is the spec; parameters include:
 | argument | meaning |
 |---|---|
 | `name` | selects the protocol on the CLI (`-p mae`) |
-| `representation` | the data representation your function receives (see below) |
+| `representation` | the shape of each datapoint your function receives (see below) |
+| `scope` | `"perturbation"` (default) or `"dataset"` — how many perturbations at once (see below) |
 | `space` | which features to score — `full` (default), or a feature space like `top_50` |
 | `centering` | a baseline subtracted before scoring, e.g. `"ctrl"` (default: none) |
 | `positive` / `negative` | the two control sources to compare |
@@ -140,19 +174,24 @@ That row is the spec; parameters include:
 | `perfect` | the value a flawless prediction attains |
 | `param` | optional — a parameter family (`top_k`, `pca_k`, `degs_padj`, `overlap_k`) that makes the protocol tunable from the CLI; omit for a fixed protocol |
 
-**`representation` is the one to grasp first.** It decides the format of `gt` and `prediction`
-when your function runs, so you never deal with sampling, references, or
-projection yourself:
+**`representation`** decides the *shape* of each datapoint — the format `gt` and
+`prediction` arrive in — so you never deal with sampling, references, or projection yourself:
 
-| `representation` | `gt` and `prediction` are |
+| `representation` | a datapoint is |
 |---|---|
-| `centroid` | two 1-D pseudobulk vectors (one value per gene) |
-| `population` | two `(cells × genes)` matrices |
-| `de` | a ground-truth `DEResult` and the prediction's per-gene DE scores |
-| `ranking` | both full `(perturbations × genes)` centroid matrices at once — the metric ranks each prediction against all the others |
+| `centroid` | a 1-D pseudobulk vector (one value per gene) |
+| `population` | a `(cells × genes)` matrix |
+| `de` | a `DEResult` (for `gt`) / per-gene `|score|` ranking (for a prediction) |
 
-Most metrics use one of the first three, which receive a single perturbation's data;
-`ranking` is the exception that sees every perturbation at once.
+**`scope`** is the independent companion axis — *how many* perturbations the metric sees at once:
+
+| `scope` | the metric is called |
+|---|---|
+| `perturbation` (default) | once per perturbation — gets that perturbation's `(gt, prediction)` datapoints and returns a scalar |
+| `dataset` | once for the whole dataset — gets the **list** of every perturbation's `gt` and `prediction` datapoints and returns one score per perturbation (e.g. a retrieval `rank`) |
+
+The two compose freely: `rank` is just `representation="centroid", scope="dataset"`; a
+distributional retrieval metric would be `representation="population", scope="dataset"`.
 
 Many rows repeat the same wiring, so the top of `table.py` predefines the common
 combinations as plain dicts. You then unpack one into a row with `**` (Python's
@@ -168,13 +207,13 @@ these bundles reused throughout the table.
 ### Building blocks — the palette
 
 The values those arguments take — feature spaces, control sources, DE methods, calibrators
-— are registered building blocks. `epps list <category>` shows what's available
+— are registered building blocks. `scperteval list <category>` shows what's available
 in each, with descriptions:
 
 **Feature spaces** (the `space` argument)
 
 ```bash
-$ epps list spaces
+$ scperteval list spaces
 degs_0.05  — ground-truth DEGs at adjusted p < 0.05, per perturbation
 full       — all genes, no transform
 pca_50     — top 50 principal components (fit on the dataset)
@@ -188,7 +227,7 @@ a protocol template picks the value. If the space you need isn't here, see
 **DE methods** (the `--de-method` choice)
 
 ```bash
-$ epps list de-methods
+$ scperteval list de-methods
 MWU        — Mann-Whitney U / Cliff's delta effect size (via illico)
 t-test     — Welch's t-test (default) — moment-based and fast
 ```
@@ -200,7 +239,7 @@ To add another, see [Add a DE method](#add-a-de-method).
 **Control sources** (the `positive` / `negative` arguments)
 
 ```bash
-$ epps list sources
+$ scperteval list sources
 all_perturbed  (cells) — all-perturbed reference sample, leave-one-out (single-cell negative control)
 all_perturbed_mean (centroid) — all-perturbed mean, excluding the target — leave-one-out (pseudobulk sibling of all_perturbed; pseudobulk negative control)
 control        (cells) — non-targeting control cells
@@ -216,7 +255,7 @@ Each `provides` cells or a pseudobulk `centroid`. Use via `positive=`/`negative=
 **Calibrators** (the `--output` choice)
 
 ```bash
-$ epps list calibrators
+$ scperteval list calibrators
 drf    — Dynamic Range Fraction — mean/median over perturbations (Miller et al. 2025)
 bds    — Bound Discrimination Score — fraction of perturbations the positive control wins (SBB 2026)
 ```
@@ -248,7 +287,7 @@ parameter, and the value is supplied on the CLI:
 ```python
 Protocol("mae_top_k", M.mae, representation="centroid", param=top_k, **_PB, **_LOWER)
 ```
-Then `epps run data.h5ad -p mae_top_k=30` (or `mae_top_k` for the default `k=50`). The
+Then `scperteval run data.h5ad -p mae_top_k=30` (or `mae_top_k` for the default `k=50`). The
 families are `top_k` (top-k DEGs), `pca_k` (k PCs), and `degs_padj` (DEGs at adjusted
 p < padj) for the space, and `overlap_k` to feed an integer straight to the metric.
 
@@ -280,7 +319,7 @@ a one-line registration.
 
 A space is a function `(X, ctx, pert) -> dense (cells × genes) array` that transforms the
 gene axis. Register it with `@SPACES.register` in
-[`epps/blocks/spaces.py`](epps/blocks/spaces.py); pass `global_space=True` if it doesn't
+[`scperteval/blocks/spaces.py`](scperteval/blocks/spaces.py); pass `global_space=True` if it doesn't
 depend on the perturbation (so it can be computed once and shared):
 
 ```python
@@ -296,7 +335,7 @@ the `register_de_space(name, field=..., top=...)` helper in the same file instea
 ### Add a DE method
 
 A DE method maps `(target_cells, reference_cells) -> DEResult(score, pvalue, pvalue_adj)`.
-Register it with `@DE_METHODS.register` in [`epps/blocks/de.py`](epps/blocks/de.py) (the
+Register it with `@DE_METHODS.register` in [`scperteval/blocks/de.py`](scperteval/blocks/de.py) (the
 `bh` helper there BH-adjusts p-values):
 
 ```python
@@ -311,7 +350,7 @@ Then `--de-method my_test` routes every DE-dependent unit through it.
 ### Add a control source
 
 A source maps `(ctx, pert) -> cells or a 1-D centroid`, declaring which with `provides`.
-Register it with `@SOURCES.register` in [`epps/sources.py`](epps/sources.py):
+Register it with `@SOURCES.register` in [`scperteval/sources.py`](scperteval/sources.py):
 
 ```python
 @SOURCES.register("my_baseline", provides="centroid", description="…")
@@ -326,7 +365,7 @@ the CLI.
 
 A calibrator declares the control roles it needs, a per-perturbation combine, and a
 cross-perturbation aggregate. Add a `Calibrator` to the `CALIBRATORS` dict in
-[`epps/calibrators.py`](epps/calibrators.py):
+[`scperteval/calibrators.py`](scperteval/calibrators.py):
 
 ```python
 CALIBRATORS["my_score"] = Calibrator(
@@ -341,7 +380,7 @@ Then `--output my_score` reports it.
 
 ## How scoring works (the calibration)
 
-EPPS's claim — a usable catalog of protocols — rests on **calibrating** each protocol
+scPertEval's claim — a usable catalog of protocols — rests on **calibrating** each protocol
 against two empirical controls per perturbation, so you can see whether a metric actually
 separates signal from baseline rather than read a raw, uninterpretable number.
 

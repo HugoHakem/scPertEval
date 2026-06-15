@@ -10,11 +10,6 @@ venv/
 # Run outputs
 results/
 
-# publication notebook: downloaded data + intermediate outputs (regenerable)
-publication/data/
-publication/drf_outputs/
-publication/de_outputs/
-
 # Editor / OS
 .idea/
 .vscode/

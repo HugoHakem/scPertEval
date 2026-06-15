@@ -55,6 +55,17 @@ class Param:
 class Protocol:
     """An evaluation protocol: a pure metric plus its data and control wiring.
 
+    ``representation`` and ``scope`` are independent and together decide what the metric
+    receives:
+
+    - ``representation`` — the shape of one perturbation's datapoint: ``"centroid"`` (a 1-D
+      pseudobulk vector), ``"population"`` (a cells × genes matrix), or ``"de"`` (a DEResult).
+    - ``scope`` — ``"perturbation"`` (default): the metric is called once per perturbation,
+      gets that perturbation's ``(gt, prediction)`` datapoints, and returns a scalar.
+      ``"dataset"``: the metric is called once, gets the list of *every* perturbation's
+      ``gt`` and ``prediction`` datapoints, and returns one score per perturbation (e.g. a
+      cross-perturbation retrieval rank).
+
     Set ``param`` to make the protocol *tunable* — its feature space (or a metric argument)
     is then chosen per run from a CLI value, e.g. ``-p mse_top_k=30``; with no value the
     parameter's default is used. Leave ``param`` unset for a fully-specified protocol.
@@ -78,6 +89,7 @@ class Protocol:
     name: str
     metric: Callable
     representation: str
+    scope: str = "perturbation"
     space: str = "full"
     centering: Optional[str] = None
     reference: str = "all_perturbed"

@@ -1,10 +1,12 @@
 """Evaluation-protocol metrics — the exact implementation of every metric.
 
-Each takes the ground-truth view and a prediction view (and the context, used only
-where a metric needs an extra input such as DE weights) and returns one scalar.
-The prediction is whichever control is being scored — positive or negative. The
-shapes are set by the protocol's ``representation``: ``centroid`` -> 1-D pseudobulk vectors,
-``population`` -> (cells x genes) arrays, ``de`` -> (gt DEResult, prediction |score| ranking).
+A metric takes the ground-truth and a prediction (whichever control is being scored) plus
+the context, and returns a score. The protocol's ``representation`` sets each datapoint's
+shape — ``centroid`` -> a 1-D pseudobulk vector, ``population`` -> a (cells x genes) array,
+``de`` -> a DEResult (GT) / |score| ranking (prediction). Its ``scope`` sets the call: a
+``perturbation``-scope metric gets one perturbation's (gt, prediction) and returns a scalar;
+a ``dataset``-scope metric gets the list of every perturbation's gt and prediction and
+returns one score per perturbation (e.g. ``rank_retrieval``).
 
 Every metric is implemented in full here; only external numerical libraries (numpy,
 scikit-learn, geomloss) are relied upon. So a metric is completely defined by its function
@@ -108,17 +110,18 @@ def sinkhorn_w2(gt, prediction, ctx, blur=0.05):
     return float(np.sqrt(max(2.0 * val, 0.0)))
 
 
-def rank_retrieval(prediction, gt, transpose=False):
-    """Cross-perturbation retrieval rank (0 = best, lower is better).
+def rank_retrieval(gt, prediction, ctx, transpose=False):
+    """Cross-perturbation retrieval rank (0 = best, lower is better) — a dataset-scope metric.
 
-    Unlike the per-perturbation metrics, this consumes the full prediction and
-    GT centroid matrices (rows = perturbations) and returns one score per row. In
-    the prediction-vs-GT squared-distance matrix, ``rank`` ranks each GT's own
-    prediction against all predictions (column-wise); ``transpose_rank`` ranks each
-    prediction's own GT against all GTs (row-wise). Normalised by n-1, with the
-    drf tie-breaking noise (seed 42).
+    ``gt`` and ``prediction`` are the lists of every perturbation's centroid (one per
+    perturbation); this returns one score per perturbation. In the prediction-vs-GT
+    squared-distance matrix, ``rank`` ranks each GT's own prediction against all predictions
+    (column-wise); ``transpose_rank`` ranks each prediction's own GT against all GTs
+    (row-wise). Normalised by n-1, with the drf tie-breaking noise (seed 42).
     """
-    sq = _sq_dists(prediction, gt)
+    G = np.vstack(gt)
+    P = np.vstack(prediction)
+    sq = _sq_dists(P, G)
     if transpose:
         sq = sq.T
     n = sq.shape[0]

@@ -3,7 +3,7 @@
 A source's positive/negative role is chosen at the CLI; the registry just produces
 the data. ``provides`` ("cells" or "centroid") drives the runner's compatibility
 check and how the context turns a source into a view. ``description`` is shown by
-``epps list sources``.
+``scperteval list sources``.
 """
 from __future__ import annotations
 
