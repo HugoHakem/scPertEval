@@ -1,14 +1,14 @@
 # scPertEval — Evaluation Protocols for Perturbation Sequencing
 
 scPertEval is a command-line tool for **experimenting with and sharing reference implementations of
-evaluation protocols** in single-cell perturbation studies. 
+evaluation protocols** in single-cell perturbation studies.
 
 Evaluating predictions across a dataset's
-perturbations reduces to a single question: how different is one group of cells from another? To answer this, an **evaluation protocol** is defined: a specific formulation of a metric, along with some representation of the perturbation data fed to the metric. However, there are a multitude of possibilities -- many already reflected in the literature -- and it can be challenging to compare and contrast protocols across the field and ultimately choose the right approach for a given dataset and problem space. 
+perturbations reduces to a single question: how different is one group of cells from another? To answer this, an **evaluation protocol** is defined: a specific formulation of a metric, along with some representation of the perturbation data fed to the metric. However, there are a multitude of possibilities -- many already reflected in the literature -- and it can be challenging to compare and contrast protocols across the field and ultimately choose the right approach for a given dataset and problem space.
 
 scPertEval renders each protocol as a short, readable building block to run, read, reuse, and contribute back -- a place for
-collaboration and alignment in the field. Run the tool by specifying a dataset, one or more protocols, and a method of differential expression; 
-the tool outputs calibration data: the **Dynamic Range Fraction (DRF)** and the 
+collaboration and alignment in the field. Run the tool by specifying a dataset, one or more protocols, and a method of differential expression;
+the tool outputs calibration data: the **Dynamic Range Fraction (DRF)** and the
 **Bound Discrimination Score (BDS)** — quantifying how well the protocol separates real perturbation
 signal from an uninformative baseline (see [How scoring works](#how-scoring-works-the-calibration)).
 
@@ -72,7 +72,7 @@ every perturbation). `--profile` adds a per-protocol wall-clock timing CSV.
 
 <details><summary><code>scperteval run --help</code></summary>
 
-```
+```txt
 usage: scperteval run [-h] [-p PROTOCOLS] [--de-method {MWU,t-test}]
                 [--subsample SUBSAMPLE] [--seed SEED] [--positive POSITIVE]
                 [--negative NEGATIVE] [--output {drf,bds}] [--out-dir OUT_DIR]
@@ -92,6 +92,7 @@ usage: scperteval run [-h] [-p PROTOCOLS] [--de-method {MWU,t-test}]
   --min-cells           skip perturbations with fewer cells
   --profile             also write a per-protocol wall-clock timing table
 ```
+
 </details>
 
 ## Use it from Python
@@ -115,14 +116,17 @@ Two files define each protocol:
 - **[`scperteval/protocols/metrics.py`](scperteval/protocols/metrics.py)** — the metric, as a
   pure function of the ground truth and a `prediction` (whichever control is being scored,
   positive or negative). e.g. `mse`, `mmd`, `de_auprc`:
+
   ```python
   def mse(gt, prediction, ctx):
       return float(np.mean((gt - prediction) ** 2))
   ```
+
 - **[`scperteval/protocols/table.py`](scperteval/protocols/table.py)** — one row wiring that function
   to its data: the data representation it receives (`representation`), feature space,
   reference centering, positive/negative controls, which direction is `better`
   (`"higher"`/`"lower"`), and the `perfect` score:
+
   ```python
   Protocol("mse", M.mse, representation="centroid",
            positive="interpolated", negative="all_perturbed_mean", better="lower", perfect=0.0)
@@ -141,16 +145,19 @@ broken down, then a few richer examples.
 Here is a complete new protocol: mean absolute error on the standard pseudobulk profiles.
 
 1. Add a pure function to [`scperteval/protocols/metrics.py`](scperteval/protocols/metrics.py):
+
    ```python
    def mae(gt, prediction, ctx):
        return float(np.mean(np.abs(gt - prediction)))
    ```
+
    Every metric function has this signature. `gt` is one perturbation's ground-truth
    profile; `prediction` is a control being compared against it (scPertEval calls the function
    once for the positive control and once for the negative). `ctx` is the dataset context,
    needed by only a few metrics — ignore it otherwise. Return a single number.
 
 2. Add a row to [`scperteval/protocols/table.py`](scperteval/protocols/table.py):
+
    ```python
    Protocol("mae", M.mae, representation="centroid",
             positive="interpolated", negative="all_perturbed_mean",
@@ -184,7 +191,7 @@ That row is the spec; parameters include:
 |---|---|
 | `centroid` | a 1-D pseudobulk vector (one value per gene) |
 | `population` | a `(cells × genes)` matrix |
-| `de` | a `DEResult` (for `gt`) / per-gene `|score|` ranking (for a prediction) |
+| `de` | a `DEResult` (for `gt`) / per-gene `\|score\|` ranking (for a prediction) |
 
 **`scope`** is the independent companion axis — *how many* perturbations the metric sees at once:
 
@@ -199,10 +206,12 @@ distributional retrieval metric would be `representation="population", scope="da
 Many rows repeat the same wiring, so the top of `table.py` predefines the common
 combinations as plain dicts. You then unpack one into a row with `**` (Python's
 keyword-expansion syntax) to avoid retyping it:
+
 ```python
 _PB = dict(group="pseudobulk", positive="interpolated", negative="all_perturbed_mean")
 _LOWER = dict(better="lower", perfect=0.0)
 ```
+
 With those, the `mae` row above is exactly `Protocol("mae", M.mae,
 representation="centroid", **_PB, **_LOWER)` — same protocol, less repetition. You'll see
 these bundles reused throughout the table.
@@ -270,16 +279,19 @@ Chosen with `--output`. To add another, see [Add a calibrator](#add-a-calibrator
 With the spec and the palette in hand, richer protocols are just different combinations.
 
 **Same wiring, different metric.** Cosine distance on pseudobulk reuses the bundles wholesale:
+
 ```python
 def cosine(gt, prediction, ctx):
     return 1.0 - float(gt @ prediction / (np.linalg.norm(gt) * np.linalg.norm(prediction)))
 ```
+
 ```python
 Protocol("cosine", M.cosine, representation="centroid", **_PB, **_LOWER)
 ```
 
 **Restrict to a feature space.** Set `space` to score only some genes — e.g. MAE on the
 top-50 DEGs:
+
 ```python
 Protocol("mae_top50", M.mae, representation="centroid", space="top_50", **_PB, **_LOWER)
 ```
@@ -287,23 +299,28 @@ Protocol("mae_top50", M.mae, representation="centroid", space="top_50", **_PB, *
 **Expose the space as a knob (parameterised).** To make `k` adjustable per run, add a
 `param` to the same `Protocol(...)` row — nothing else changes. The row's name carries the
 parameter, and the value is supplied on the CLI:
+
 ```python
 Protocol("mae_top_k", M.mae, representation="centroid", param=top_k, **_PB, **_LOWER)
 ```
+
 Then `scperteval run data.h5ad -p mae_top_k=30` (or `mae_top_k` for the default `k=50`). The
 families are `top_k` (top-k DEGs), `pca_k` (k PCs), and `degs_padj` (DEGs at adjusted
 p < padj) for the space, and `overlap_k` to feed an integer straight to the metric.
 
 **A metric over cells, not profiles.** Switch `representation` to `population` and your
 function receives `(cells × genes)` matrices; pair it with the single-cell controls:
+
 ```python
 def my_mmd(gt, prediction, ctx):      # gt, prediction are (cells × genes)
     ...
 ```
+
 ```python
 Protocol("my_mmd_top50", M.my_mmd, representation="population", space="top_50",
          positive="tech_dup", negative="all_perturbed", better="lower", perfect=0.0)
 ```
+
 This changes two pieces at once — the `representation` (so the function sees cells) and the controls
 (the single-cell positive/negative) — which is the general pattern for a distributional
 protocol.
@@ -396,7 +413,7 @@ separates signal from baseline rather than read a raw, uninterpretable number.
 **Dynamic Range Fraction (DRF)** — where the protocol's value sits between the negative
 control (floor) and the perfect score, anchored by the positive control:
 
-```
+```python
 DRF = (positive − negative) / (perfect − negative)        # per perturbation, clipped to [-1, 1]
 ```
 
@@ -408,7 +425,7 @@ Well-Calibrated Metrics* (2025) — <https://doi.org/10.1101/2025.10.20.683304>.
 **Bound Discrimination Score (BDS)** — the fraction of perturbations for which the positive
 control beats the negative control under this protocol:
 
-```
+```python
 BDS = fraction of perturbations where  positive control beats negative control     # in [0, 1]
 ```
 
