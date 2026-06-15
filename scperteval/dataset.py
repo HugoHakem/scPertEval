@@ -12,7 +12,7 @@ from .types import RunConfig
 
 
 def _seed(seed: int, *tags) -> np.random.Generator:
-    key = (seed,) + tuple(zlib.crc32(str(t).encode()) for t in tags)
+    key = (seed, *(zlib.crc32(str(t).encode()) for t in tags))
     return np.random.default_rng(np.array(key, dtype=np.uint32))
 
 
@@ -28,7 +28,7 @@ class Dataset:
         self._index()
 
     @classmethod
-    def load(cls, path: str, cfg: RunConfig) -> "Dataset":
+    def load(cls, path: str, cfg: RunConfig) -> Dataset:
         return cls(ad.read_h5ad(path), cfg)
 
     def _index(self):
@@ -64,7 +64,8 @@ class Dataset:
 
     def all_perturbed_indices(self, cap: int) -> np.ndarray:
         """One all-perturbed subsample (the reference sample, shared across perturbations).
-        The "pool" tag is a fixed reproducibility salt for the draw, not a public name."""
+        The "pool" tag is a fixed reproducibility salt for the draw, not a public name.
+        """
         return self._cap(np.where(self.pert != self.cfg.control_label)[0], cap, "pool")
 
     def allpert_mean_except(self, pert: str) -> np.ndarray:
@@ -73,7 +74,8 @@ class Dataset:
 
     def allpert_mean(self) -> np.ndarray:
         """Mean of all per-perturbation means (no target exclusion); a single vector
-        shared across perturbations, used as the cross-perturbation ranking baseline."""
+        shared across perturbations, used as the cross-perturbation ranking baseline.
+        """
         return self._mean_sum / max(len(self.perturbations), 1)
 
     def control_mean(self) -> np.ndarray:

@@ -96,7 +96,8 @@ def _run_dataset(p: Protocol, ctx, calibrator: Calibrator, needed: dict):
 
 def compute_de_export(ctx, methods):
     """{method: (statistic, pvalue_adj)} matrices (perturbations x genes) for each
-    method's GT(first-half)-vs-all-perturbed differential expression."""
+    method's GT(first-half)-vs-all-perturbed differential expression.
+    """
     out = {}
     for method in methods:
         ctx.cfg.de_method = method

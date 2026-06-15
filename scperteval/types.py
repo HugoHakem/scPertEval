@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from functools import partial
-from typing import Callable, Optional
 
 import numpy as np
 
@@ -49,7 +49,7 @@ class Param:
     name: str
     cast: Callable
     default: float
-    space: Optional[Callable] = None
+    space: Callable | None = None
 
 
 @dataclass(frozen=True)
@@ -92,21 +92,21 @@ class Protocol:
     representation: str
     scope: str = "perturbation"
     space: str = "full"
-    centering: Optional[str] = None
+    centering: str | None = None
     reference: str = "all_perturbed"
-    neg_reference: Optional[str] = None
+    neg_reference: str | None = None
     better: str = "higher"
     perfect: float = 1.0
     positive: str = "auto"
     negative: str = "auto"
     group: str = ""
-    param: Optional[Param] = None
+    param: Param | None = None
 
     @property
     def parameterised(self) -> bool:
         return self.param is not None
 
-    def resolve(self, value) -> "Protocol":
+    def resolve(self, value) -> Protocol:
         """Concrete protocol for a tunable one at ``value`` (sets the space or metric arg)."""
         assert self.param is not None
         suffix = f"{value:g}" if isinstance(value, float) else str(value)

@@ -15,7 +15,6 @@ from ..blocks.spaces import degs_space, pca_space, top_space
 from ..types import Param, Protocol
 from . import metrics as M
 
-
 # --- parameter families: a CLI value selects a feature space (or feeds the metric) ---
 top_k = Param("k", int, 50, space=top_space)  # top-k DEGs by effect size
 pca_k = Param("k", int, 50, space=pca_space)  # k principal components

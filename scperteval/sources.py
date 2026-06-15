@@ -70,8 +70,9 @@ def src_global_mean(ctx, pert):
     "the dataset mean (pseudobulk positive control)",
 )
 def src_interpolated(ctx, pert):
-    """alpha = 1 - adjusted p per gene (from the run's DE method, vs control); blend toward
-    the held-out replicate where the gene is significant, else toward the all-perturbed mean."""
+    """Alpha = 1 - adjusted p per gene (from the run's DE method, vs control); blend toward
+    the held-out replicate where the gene is significant, else toward the all-perturbed mean.
+    """
     tech = np.asarray(to_dense(ctx.ds.cells(pert, half="second"))).mean(0)
     alpha = np.nan_to_num(1.0 - ctx.de(pert, "tech_dup", "control").pvalue_adj, nan=0.0)
     return alpha * tech + (1.0 - alpha) * ctx.ds.allpert_mean_except(pert)

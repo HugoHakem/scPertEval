@@ -61,7 +61,8 @@ def write_de(cfg, genes, perturbations, results: dict, timestamp: str) -> Path:
     """Write per-gene DE (statistic + adjusted p) per method to an HDF5 file.
 
     Layout: ``genes``, ``perturbations``, and one group per method holding
-    ``statistic`` and ``pvalue_adj`` matrices (perturbations x genes)."""
+    ``statistic`` and ``pvalue_adj`` matrices (perturbations x genes).
+    """
     import h5py
 
     out_dir = Path(cfg.out_dir)

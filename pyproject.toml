@@ -58,6 +58,8 @@ lint.select = [
     "W",    # pycodestyle warnings (W291 trailing whitespace, W605 invalid escape sequence…)
 ]
 lint.ignore = [
+    "B905", # `zip()` without an explicit `strict=` parameter
+    "C408", # Unnecessary dict(), list() or tuple() calls that can be rewritten as empty literals.
     "D100", # Missing docstring in public module
     "D104", # Missing docstring in public package
     "D105", # Missing docstring in magic methods
