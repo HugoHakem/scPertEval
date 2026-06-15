@@ -60,6 +60,25 @@ def de_ttest(target, reference) -> DEResult:
     return ttest_from_moments(*moments(target), *moments(reference))
 
 
+@DE_METHODS.register(
+    "t-test_overestim_var",
+    description="scanpy's conservative t-test variant; reference variance scaled by the "
+                "target's cell count (selectable backend; not used by any current protocol)",
+)
+def de_ttest_overestim(target, reference) -> DEResult:
+    """scanpy ``rank_genes_groups(method='t-test_overestim_var')``.
+
+    Identical to Welch's t-test except the reference group's cell count is replaced by the
+    target's, which inflates the reference standard-error term ("overestimating" its variance
+    for small target groups) and yields a more conservative statistic. Selectable as a DE
+    backend (``--de-method``/``--methods``) so new evaluation protocols can use it; no current
+    protocol does.
+    """
+    mt, vt, nt = moments(target)
+    mr, vr, _nr = moments(reference)
+    return ttest_from_moments(mt, vt, nt, mr, vr, nt)
+
+
 @DE_METHODS.register("MWU", description="Mann-Whitney U / Cliff's delta effect size (via illico)")
 def de_mwu(target, reference) -> DEResult:
     """Mann-Whitney U via illico (one-vs-reference); score = Cliff's delta.

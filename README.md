@@ -70,10 +70,16 @@ Each run prints a summary table and writes a per-perturbation CSV
 `<dataset>__<timestamp>__drf.csv` (the raw control values and the calibrated score for
 every perturbation). `--profile` adds a per-protocol wall-clock timing CSV.
 
+**DE backends** (`scperteval list de-methods`): `t-test` (default, Welch's, moment-based),
+`MWU` (Cliff's δ via illico), and `t-test_overestim_var` (scanpy's conservative-variance
+variant — the reference variance is scaled by the target's cell count). Select one with
+`--de-method` for a `run`, or list several with `--methods` for a `de` export. The overestim
+variant is a selectable backend for new protocols; no current protocol uses it.
+
 <details><summary><code>scperteval run --help</code></summary>
 
 ```
-usage: scperteval run [-h] [-p PROTOCOLS] [--de-method {MWU,t-test}]
+usage: scperteval run [-h] [-p PROTOCOLS] [--de-method {MWU,t-test,t-test_overestim_var}]
                 [--subsample SUBSAMPLE] [--seed SEED] [--positive POSITIVE]
                 [--negative NEGATIVE] [--output {drf,bds}] [--out-dir OUT_DIR]
                 [--workers WORKERS] [--perturbation-key PERTURBATION_KEY]
@@ -83,7 +89,7 @@ usage: scperteval run [-h] [-p PROTOCOLS] [--de-method {MWU,t-test}]
 
   -p, --protocols       comma-separated names (parameterised as name=value, e.g.
                         mse_top_k=30), a group (pseudobulk|distributional|de), or 'all'
-  --de-method           {MWU, t-test}   DE backend for EVERY DE-dependent unit:
+  --de-method           {MWU, t-test, t-test_overestim_var}   DE backend for every DE unit:
                         the interpolated positive control, the top_k/degs spaces,
                         the de_* protocols, and the WMSE weights
   --subsample           cells in the single-cell reference sample (default 8192)
