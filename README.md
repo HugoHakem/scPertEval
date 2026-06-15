@@ -20,6 +20,28 @@ Our accompanying publiciation: TODO_LINK_HERE
 pip install -e .          # provides the `scperteval` command
 ```
 
+## Input data
+
+scPertEval reads one preprocessed AnnData (`.h5ad`) per dataset. Only three things are required:
+
+- **`adata.X`** — normalized expression, cells × genes (e.g. `sc.pp.normalize_total` + `sc.pp.log1p`); sparse or dense float.
+- **`adata.obs["perturbation"]`** — the perturbation label for each cell; control cells use the label `"control"`. Both names are configurable (`--perturbation-key` / `--control-label`).
+- **`adata.var_names`** — gene identifiers, used as the DEG labels.
+
+Perturbations with at least `--min-cells` cells (default 30) are evaluated. Nothing else is
+needed — references, DE, and PCA are all recomputed in memory, so no `uns`/`obsm`/`layers` are read.
+
+**Sample datasets.** Seven preprocessed perturbation datasets live in a public, read-only GCS
+bucket and serve as a template for the format above:
+
+```bash
+gsutil ls gs://scperteval/processed/      # wessels23, replogle22{k562,rpe1}, nadig25{hepg2,jurkat}, arch1, kaden25rpe1
+gsutil cp gs://scperteval/processed/wessels23_processed_complete.h5ad .
+```
+
+No gcloud account is needed — each file is also reachable over plain HTTPS at
+`https://storage.googleapis.com/scperteval/processed/<dataset>_processed_complete.h5ad`.
+
 ## Run it
 
 ```bash
@@ -84,25 +106,6 @@ import subprocess, sys
 subprocess.run([sys.executable, "-m", "scperteval", "run", "data/wessels23.h5ad",
                 "-p", "all", "--de-method", "t-test", "--out-dir", "results"], check=True)
 # -> results/wessels23__<timestamp>__drf.csv  (raw control values + calibrated DRF per perturbation)
-```
-
-Or drive it as a library for programmatic results:
-
-```python
-from scperteval.cli import resolve_protocols
-from scperteval.types import RunConfig
-from scperteval.dataset import Dataset
-from scperteval.context import Context
-from scperteval.runner import run_protocol
-from scperteval.calibrators import CALIBRATORS
-
-protocols = resolve_protocols(["mse", "unbiased_mmd_median_top_k=50", "de_auroc"])  # or ["all"], a group, etc.
-cfg = RunConfig(dataset="data/wessels23.h5ad", protocols=[p.name for p in protocols], de_method="t-test")
-ctx = Context(Dataset.load(cfg.dataset, cfg), cfg)
-ctx.warm(protocols)
-for p in protocols:
-    aggregate, rows, seconds = run_protocol(p, ctx, CALIBRATORS["drf"])
-    print(p.name, aggregate)          # e.g. mse {'mean': 0.333, 'median': 0.358}
 ```
 
 ## Look up an Evaluation Protocol
