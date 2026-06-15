@@ -2,7 +2,7 @@
 name = "scperteval"
 version = "0.1.0"
 description = "Evaluation Protocols for Perturbation Studies: per-metric DRF/BDS calibration on a single preprocessed dataset."
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "anndata",
     "scanpy",
