@@ -28,17 +28,9 @@
 
 ## Protocols
 
-```{eval-rst}
-.. module:: scperteval.protocols
-.. currentmodule:: scperteval.protocols
-
-.. autosummary::
-    :toctree: generated
-
-    PROTOCOLS
-    GROUPS
-    TABLE
-```
+`scperteval.protocols.TABLE` — list of all `Protocol` objects.
+`scperteval.protocols.PROTOCOLS` — `{name: Protocol}` dict.
+`scperteval.protocols.GROUPS` — sorted list of group names.
 
 ### Metrics
 

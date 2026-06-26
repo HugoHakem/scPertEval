@@ -110,6 +110,7 @@ html_theme_options = {
     "use_repository_button": True,
     "path_to_docs": "docs/",
     "navigation_with_keys": False,
+    "show_navbar_depth": 1,
 }
 
 pygments_style = "default"
