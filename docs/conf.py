@@ -2,6 +2,7 @@
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
 import shutil
+import subprocess
 import sys
 from datetime import datetime
 from importlib.metadata import metadata
@@ -11,6 +12,19 @@ from sphinxcontrib import katex
 
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE / "extensions"))
+
+# -- Fetch notebooks from companion tutorials repository ----------------------
+
+_TUTORIALS_REPO = "https://github.com/Virtual-Cell-Research-Community/scPertEval-tutorials"
+_NOTEBOOKS_DIR = HERE / "notebooks"
+
+if _NOTEBOOKS_DIR.exists() and (_NOTEBOOKS_DIR / ".git").exists():
+    subprocess.run(["git", "-C", str(_NOTEBOOKS_DIR), "pull", "--ff-only"], check=False)
+else:
+    subprocess.run(
+        ["git", "clone", "--depth=1", _TUTORIALS_REPO, str(_NOTEBOOKS_DIR)],
+        check=True,
+    )
 
 # -- Project information -----------------------------------------------------
 
@@ -96,7 +110,7 @@ intersphinx_mapping = {
     "sklearn": ("https://scikit-learn.org/stable/", None),
 }
 
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "**.ipynb_checkpoints"]
+exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "**.ipynb_checkpoints", "notebooks/README.md"]
 
 # -- Options for HTML output -------------------------------------------------
 
