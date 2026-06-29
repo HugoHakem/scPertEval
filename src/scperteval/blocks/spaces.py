@@ -16,6 +16,20 @@ from ..dataset import to_dense
 from ..registry import Registry
 
 SPACES = Registry("space")
+"""Registry of feature-space transforms; keys are space names (e.g. ``"top_50"``).
+
+Use :meth:`~scperteval.registry.Registry.register` to add a custom space::
+
+    from scperteval.blocks.spaces import SPACES, to_dense
+
+    @SPACES.register("hvg_100", global_space=True, description="100 highest-variance genes")
+    def space_hvg(X, ctx, pert):
+        keep = ...                    # indices of the 100 genes to keep
+        return to_dense(X[:, keep])
+
+Pass ``global_space=True`` if the transform does not depend on the perturbation
+(so it can be computed once and shared across all perturbations in a run).
+"""
 
 
 @SPACES.register("full", global_space=True, description="all genes, no transform")
@@ -28,10 +42,29 @@ def _field(de, name):
 
 
 def register_de_space(name, field, top=None, threshold=None, description=""):
-    """Register a DE-derived gene subset selected from a field of the GT DEResult.
+    r"""Register a DE-derived gene subset selected from a field of the GT DEResult.
 
-    Exactly one of ``top`` (select top-k by |value|) or ``threshold`` (a callable
+    Exactly one of ``top`` (select top-k by \|value\|) or ``threshold`` (a callable
     returning a boolean mask) must be provided.
+
+    Parameters
+    ----------
+    name : str
+        Registry key for the new space.
+    field : str
+        Attribute of :class:`~scperteval.types.DEResult` to read
+        (e.g. ``"score"``, ``"pvalue_adj"``).
+    top : int or None
+        If given, keep the top-k genes by absolute value of ``field``.
+    threshold : Callable or None
+        If given, a function ``(values) -> bool mask`` selecting genes to keep.
+    description : str
+        Human-readable description shown by ``scperteval list spaces``.
+
+    Returns
+    -------
+    str
+        The registered space name (same as ``name``).
     """
 
     def space(X, ctx, pert):
@@ -48,7 +81,18 @@ def register_de_space(name, field, top=None, threshold=None, description=""):
 
 
 def top_space(k: int) -> str:
-    """top-k genes by |ground-truth effect size| (registered on demand)."""
+    r"""Return the name of the top-k-by-effect-size space, registering it on first call.
+
+    Parameters
+    ----------
+    k : int
+        Number of genes to keep (selected by \|ground-truth effect size\| per perturbation).
+
+    Returns
+    -------
+    str
+        Space name ``"top_<k>"`` (e.g. ``"top_50"``).
+    """
     name = f"top_{k}"
     if name not in SPACES:
         register_de_space(
@@ -58,7 +102,18 @@ def top_space(k: int) -> str:
 
 
 def degs_space(padj: float) -> str:
-    """ground-truth DEGs at adjusted p < padj (registered on demand)."""
+    """Return the name of the ground-truth DEGs space at adjusted p < padj, registering on first call.
+
+    Parameters
+    ----------
+    padj : float
+        Adjusted p-value threshold (e.g. 0.05).
+
+    Returns
+    -------
+    str
+        Space name ``"degs_<padj>"`` (e.g. ``"degs_0.05"``).
+    """
     name = f"degs_{padj:g}"
     if name not in SPACES:
         register_de_space(
@@ -71,7 +126,21 @@ def degs_space(padj: float) -> str:
 
 
 def pca_space(k: int) -> str:
-    """top-k principal components (registered on demand)."""
+    """Return the name of the top-k PCA space, registering it on first call.
+
+    PCA is fit once on (up to 50 000) cells from the full dataset, then applied
+    to each cell population. The fitted transform is shared across perturbations.
+
+    Parameters
+    ----------
+    k : int
+        Number of principal components to retain.
+
+    Returns
+    -------
+    str
+        Space name ``"pca_<k>"`` (e.g. ``"pca_50"``).
+    """
     name = f"pca_{k}"
     if name not in SPACES:
         SPACES.add(

@@ -21,10 +21,29 @@ from .types import Protocol, RunConfig
 
 
 class Context:
-    """Owns the dataset, caches DE / PCA / control mean, and dispatches views.
+    """Per-run engine: owns the dataset, caches shared computations, and dispatches views.
 
-    Caches are keyed per perturbation, so the runner can fan perturbations out
-    across threads; ``current_pert`` is thread-local for the same reason.
+    Instantiated once per ``scperteval run`` call and passed to every metric as ``ctx``.
+    Caches are keyed per perturbation so the runner can fan work out across threads;
+    ``current_pert`` is thread-local for the same reason.
+
+    Parameters
+    ----------
+    dataset : ~scperteval.dataset.Dataset
+        Loaded and indexed AnnData wrapper.
+    cfg : ~scperteval.types.RunConfig
+        Resolved run options (DE method, subsample size, seed, …).
+
+    Attributes
+    ----------
+    ds : ~scperteval.dataset.Dataset
+        The underlying dataset.
+    cfg : ~scperteval.types.RunConfig
+        The resolved run configuration.
+    perturbations : list of str
+        Names of all perturbations that passed the ``min_cells`` filter.
+    current_pert : str or None
+        Thread-local name of the perturbation currently being processed.
     """
 
     def __init__(self, dataset: Dataset, cfg: RunConfig):

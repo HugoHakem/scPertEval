@@ -9,6 +9,7 @@ import pandas as pd
 
 
 def print_summary(cfg, aggregates: dict, calibrator, protocols) -> None:
+    """Print a formatted table of aggregate scores for every protocol."""
     name = Path(cfg.dataset).stem
     print(f"\n{name} · {cfg.de_method} · subsample={cfg.subsample} · seed={cfg.seed} · output={cfg.output}\n")
     agg_keys = sorted({k for v in aggregates.values() for k in v})
@@ -23,6 +24,7 @@ def print_summary(cfg, aggregates: dict, calibrator, protocols) -> None:
 
 
 def write_rows(cfg, rows: list, timestamp: str) -> Path:
+    """Write per-perturbation rows (raw controls + calibrated score) to a timestamped CSV."""
     out_dir = Path(cfg.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     df = pd.DataFrame(rows)

@@ -24,10 +24,29 @@ def resolve_controls(p: Protocol, cfg) -> dict:
 
 
 def run_protocol(p: Protocol, ctx, calibrator: Calibrator):
-    """Return (aggregate scores, per-perturbation rows, wall-clock seconds) for one protocol.
+    """Run one protocol over every perturbation and apply the calibrator.
 
-    ``scope`` chooses the loop: per-perturbation protocols score one perturbation at a time;
-    dataset-scope protocols hand the metric every perturbation's datapoint at once.
+    ``p.scope`` chooses the execution path: ``"perturbation"``-scope protocols run in a
+    thread pool (one perturbation at a time); ``"dataset"``-scope protocols collect all
+    perturbations' datapoints first, then call the metric once.
+
+    Parameters
+    ----------
+    p : ~scperteval.types.Protocol
+        The concrete (non-parameterised) protocol to evaluate.
+    ctx : ~scperteval.context.Context
+        Per-run context holding the dataset, caches, and building blocks.
+    calibrator : ~scperteval.types.Calibrator
+        Calibrator that converts raw positive/negative control scores into a final value.
+
+    Returns
+    -------
+    aggregates : dict
+        Aggregate scores across perturbations (e.g. ``{"mean": 0.42, "median": 0.38}``).
+    rows : list of dict
+        Per-perturbation records with raw control values and the calibrated score.
+    seconds : float
+        Wall-clock time for this protocol.
     """
     roles = resolve_controls(p, ctx.cfg)
     needed = {role: roles[role] for role in calibrator.requires}

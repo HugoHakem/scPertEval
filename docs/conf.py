@@ -120,4 +120,5 @@ katex_prerender = shutil.which(katex.NODEJS_BINARY) is not None
 nitpick_ignore = [ # type: ignore
     # Add exceptions here for links outside your control that fail to resolve
     #     ("py:class", "igraph.Graph"),
+    ("py:class", "Context"),  # internal runtime class, not part of the public API
 ]
