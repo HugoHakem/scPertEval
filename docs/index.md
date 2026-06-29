@@ -16,7 +16,7 @@ and contribute back — a place for collaboration and alignment in the field. Ru
 specifying a dataset, one or more protocols, and a method of differential expression; the
 tool outputs calibration data: the **Dynamic Range Fraction (DRF)** and the **Bound
 Discrimination Score (BDS)** — quantifying how well the protocol separates real perturbation
-signal from an uninformative baseline (see [How scoring works](user-guide/scoring.md)).
+signal from an uninformative baseline (see [Calibration](user-guide/calibration.md)).
 
 ## Quick start
 
