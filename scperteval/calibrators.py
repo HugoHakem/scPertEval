@@ -38,4 +38,9 @@ CALIBRATORS = {
         lambda v: {"bds": float(np.nanmean(v))},
         description="Bound Discrimination Score — fraction of perturbations the positive control wins (SBB 2026)",
     ),
+    "score": Calibrator(
+        "score", ("prediction",), lambda raws, p: raws["prediction"],
+        lambda v: {"mean": float(np.nanmean(v)), "median": float(np.nanmedian(v))},
+        description="raw metric of a prediction vs ground truth — mean/median over perturbations (prediction-scoring mode)",
+    ),
 }

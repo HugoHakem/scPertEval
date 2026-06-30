@@ -19,6 +19,8 @@ class RunConfig:
     seed: int = 42
     positive: str = "auto"
     negative: str = "auto"
+    truth: str = "gt_half"
+    predictions: Optional[str] = None
     output: str = "drf"
     out_dir: str = "results"
     workers: int = 0

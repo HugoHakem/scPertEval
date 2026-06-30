@@ -15,10 +15,14 @@ def n_workers(cfg) -> int:
     return cfg.workers if cfg.workers > 0 else max(1, min(16, (os.cpu_count() or 2) - 2))
 
 
-def resolve_controls(p: Protocol, cfg) -> dict:
+def resolve_roles(p: Protocol, cfg) -> dict:
+    """Map each candidate role a calibrator may require to a source name. ``positive`` /
+    ``negative`` come from the protocol (or a CLI override); ``prediction`` is always the
+    model-prediction source (used by the ``score`` calibrator)."""
     return {
         "positive": cfg.positive if cfg.positive != "auto" else p.positive,
         "negative": cfg.negative if cfg.negative != "auto" else p.negative,
+        "prediction": "prediction",
     }
 
 
@@ -28,7 +32,7 @@ def run_protocol(p: Protocol, ctx, calibrator: Calibrator):
     ``scope`` chooses the loop: per-perturbation protocols score one perturbation at a time;
     dataset-scope protocols hand the metric every perturbation's datapoint at once.
     """
-    roles = resolve_controls(p, ctx.cfg)
+    roles = resolve_roles(p, ctx.cfg)
     needed = {role: roles[role] for role in calibrator.requires}
     _check_sources(p, needed)
     run = _run_dataset if p.scope == "dataset" else _run_per_perturbation
@@ -49,7 +53,7 @@ def _run_per_perturbation(p: Protocol, ctx, calibrator: Calibrator, needed: dict
     """Score one perturbation at a time (across a thread pool), gt vs each control."""
     def work(pert):
         ctx.current_pert = pert
-        gt = ctx.view(pert, "gt", p)
+        gt = ctx.view(pert, ctx.cfg.truth, p)
         return {role: p.metric(gt, ctx.view(pert, src, p), ctx) for role, src in needed.items()}
 
     perts = ctx.perturbations
@@ -78,7 +82,7 @@ def _run_dataset(p: Protocol, ctx, calibrator: Calibrator, needed: dict):
         return out
 
     start = perf_counter()
-    gt = collect("gt")
+    gt = collect(ctx.cfg.truth)
     scores = {role: p.metric(gt, collect(src), ctx) for role, src in needed.items()}
     seconds = perf_counter() - start
 
@@ -95,7 +99,7 @@ def compute_de_export(ctx, methods):
         ctx.cfg.de_method = method
 
         def work(pert):
-            de = ctx.de(pert, "gt", "all_perturbed")
+            de = ctx.de(pert, ctx.cfg.truth, "all_perturbed")
             return de.score, de.pvalue_adj
 
         with ThreadPoolExecutor(max_workers=n_workers(ctx.cfg)) as pool:
