@@ -1,5 +1,7 @@
 """The per-run engine: lazily builds and caches the shared building blocks, and
-turns a (perturbation, source) into the exact view a protocol consumes."""
+turns a (perturbation, source) into the exact view a protocol consumes.
+"""
+
 from __future__ import annotations
 
 import threading
@@ -24,7 +26,7 @@ class Context:
     def __init__(self, dataset: Dataset, cfg: RunConfig):
         self.ds = dataset
         self.cfg = cfg
-        self.predictions = None     # a PredictionSet in prediction-scoring mode, else None
+        self.predictions = None  # a PredictionSet in prediction-scoring mode, else None
         self._local = threading.local()
         # Reentrant: several lazy initialisers (e.g. _ensure_ref_sums, ref_projection)
         # call reference() while already holding this lock, which a plain Lock would
@@ -54,7 +56,8 @@ class Context:
 
     def warm(self, protocols):
         """Precompute shared singletons before the parallel loop so per-perturbation
-        threads only ever write per-perturbation cache keys."""
+        threads only ever write per-perturbation cache keys.
+        """
         self.control_mean()
         if any(p.representation in ("population", "de") for p in protocols):
             self.reference()
@@ -63,8 +66,9 @@ class Context:
             self._moments("control", None)
         if any(p.space == "pca50" for p in protocols):
             self.pca()
-        for space in {p.space for p in protocols
-                      if p.representation == "population" and SPACES.meta(p.space).get("global_space")}:
+        for space in {
+            p.space for p in protocols if p.representation == "population" and SPACES.meta(p.space).get("global_space")
+        }:
             self.ref_projection(space)
 
     def view(self, pert: str, source: str, p: Protocol):
@@ -94,7 +98,8 @@ class Context:
     def _de_view(self, pert, source, p):
         """GT -> truth labels (its DEResult); a candidate -> its |score| ranking.
         The negative candidate is tested against ``neg_reference`` (e.g. control)
-        rather than ``reference`` (the all-perturbed sample), the hybrid DE setup."""
+        rather than ``reference`` (the all-perturbed sample), the hybrid DE setup.
+        """
         if source == self.cfg.truth:
             return self.de(pert, self.cfg.truth, p.reference)
         reference = p.neg_reference if (source == p.negative and p.neg_reference) else p.reference
@@ -102,16 +107,15 @@ class Context:
 
     def de(self, pert, source, reference="all_perturbed"):
         """DE for one (source vs reference) comparison; the reference moments are
-        leave-one-out, so a perturbation is never compared against a sample of itself."""
+        leave-one-out, so a perturbation is never compared against a sample of itself.
+        """
         method = self.cfg.de_method
         key = (self._mom_key(source, pert), self._mom_key(reference, pert), method)
         if key not in self._de:
             if method == "t-test":
-                self._de[key] = ttest_from_moments(*self._moments(source, pert),
-                                                    *self._moments(reference, pert))
+                self._de[key] = ttest_from_moments(*self._moments(source, pert), *self._moments(reference, pert))
             else:
-                self._de[key] = DE_METHODS[method](self._de_cells(source, pert),
-                                                   self._de_cells(reference, pert))
+                self._de[key] = DE_METHODS[method](self._de_cells(source, pert), self._de_cells(reference, pert))
         return self._de[key]
 
     def _moments(self, source, pert):
@@ -147,7 +151,8 @@ class Context:
 
     def reference(self) -> Reference:
         """The all-perturbed sample (subsampled + densified once), with each cell's
-        perturbation recorded so it can be served leave-one-out."""
+        perturbation recorded so it can be served leave-one-out.
+        """
         if self._reference is None:
             with self._init_lock:
                 if self._reference is None:
@@ -158,7 +163,8 @@ class Context:
 
     def _reference_population(self, space, pert):
         """The reference in a feature space with the target perturbation removed:
-        project the whole sample (cached for global spaces) then drop its rows."""
+        project the whole sample (cached for global spaces) then drop its rows.
+        """
         ref = self.reference()
         if SPACES.meta(space).get("global_space"):
             proj = self.ref_projection(space)
@@ -177,7 +183,8 @@ class Context:
 
     def _ensure_ref_sums(self):
         """Cache the reference's column sums and sums-of-squares once, so leave-one-out
-        moments are an O(target cells) subtraction rather than a re-densify per perturbation."""
+        moments are an O(target cells) subtraction rather than a re-densify per perturbation.
+        """
         if self._ref_sums is None:
             with self._init_lock:
                 if self._ref_sums is None:
@@ -219,7 +226,8 @@ class Context:
 
     def _fit_pca(self, n_components):
         """Fit PCA on (nearly) all cells; the subsample cap is for the O(n^2)
-        distance populations, not the PCA basis, which needs many cells to be stable."""
+        distance populations, not the PCA basis, which needs many cells to be stable.
+        """
         from sklearn.decomposition import PCA
 
         n = self.ds.adata.n_obs

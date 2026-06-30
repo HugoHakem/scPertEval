@@ -5,6 +5,7 @@ comes from here. The prediction file must contain exactly the dataset's genes (s
 any order) and the same perturbation column; columns are reordered to the dataset's gene
 order so every metric's positional ``gt - prediction`` comparison lines up.
 """
+
 from __future__ import annotations
 
 import anndata as ad
@@ -18,7 +19,8 @@ def _align_genes(pred_genes: np.ndarray, ds_genes: np.ndarray) -> np.ndarray:
     """Indices that reorder the prediction's genes into the dataset's gene order.
 
     Errors (naming what's wrong) unless the two gene sets are identical -- metrics compare
-    gene vectors positionally, so a mismatch would silently compare the wrong genes."""
+    gene vectors positionally, so a mismatch would silently compare the wrong genes.
+    """
     pred_set, ds_set = set(map(str, pred_genes)), set(map(str, ds_genes))
     missing = [g for g in map(str, ds_genes) if g not in pred_set]
     extra = [g for g in map(str, pred_genes) if g not in ds_set]
@@ -47,7 +49,7 @@ class PredictionSet:
         self.pert = np.asarray(adata.obs[cfg.perturbation_key]).astype(str)
 
     @classmethod
-    def load(cls, path: str, ds: Dataset, cfg: RunConfig) -> "PredictionSet":
+    def load(cls, path: str, ds: Dataset, cfg: RunConfig) -> PredictionSet:
         return cls(ad.read_h5ad(path), ds, cfg)
 
     def cells(self, pert: str) -> np.ndarray:

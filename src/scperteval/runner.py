@@ -1,4 +1,5 @@
 """Runs one protocol over every perturbation and applies the chosen calibrator."""
+
 from __future__ import annotations
 
 import os
@@ -18,7 +19,8 @@ def n_workers(cfg) -> int:
 def resolve_roles(p: Protocol, cfg) -> dict:
     """Map each candidate role a calibrator may require to a source name. ``positive`` /
     ``negative`` come from the protocol (or a CLI override); ``prediction`` is always the
-    model-prediction source (used by the ``score`` calibrator)."""
+    model-prediction source (used by the ``score`` calibrator).
+    """
     return {
         "positive": cfg.positive if cfg.positive != "auto" else p.positive,
         "negative": cfg.negative if cfg.negative != "auto" else p.negative,
@@ -42,15 +44,21 @@ def run_protocol(p: Protocol, ctx, calibrator: Calibrator):
 def _finalize(p, calibrator, perts, raws_list):
     """Per-perturbation rows + the aggregate, from each perturbation's raw control values."""
     per_pert = [calibrator.per_pert(raws, p) for raws in raws_list]
-    rows = [{"protocol": p.name, "perturbation": pert,
-             **{f"raw_{role}": raws[role] for role in raws},
-             calibrator.name: value}
-            for pert, raws, value in zip(perts, raws_list, per_pert)]
+    rows = [
+        {
+            "protocol": p.name,
+            "perturbation": pert,
+            **{f"raw_{role}": raws[role] for role in raws},
+            calibrator.name: value,
+        }
+        for pert, raws, value in zip(perts, raws_list, per_pert)
+    ]
     return calibrator.aggregate(np.asarray(per_pert, dtype=float)), rows
 
 
 def _run_per_perturbation(p: Protocol, ctx, calibrator: Calibrator, needed: dict):
     """Score one perturbation at a time (across a thread pool), gt vs each control."""
+
     def work(pert):
         ctx.current_pert = pert
         gt = ctx.view(pert, ctx.cfg.truth, p)
@@ -93,7 +101,8 @@ def _run_dataset(p: Protocol, ctx, calibrator: Calibrator, needed: dict):
 
 def compute_de_export(ctx, methods):
     """{method: (statistic, pvalue_adj)} matrices (perturbations x genes) for each
-    method's GT(first-half)-vs-all-perturbed differential expression."""
+    method's GT(first-half)-vs-all-perturbed differential expression.
+    """
     out = {}
     for method in methods:
         ctx.cfg.de_method = method
