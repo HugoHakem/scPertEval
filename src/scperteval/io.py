@@ -1,4 +1,5 @@
 """Human-readable summary plus a per-perturbation CSV named with dataset + time."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -8,6 +9,7 @@ import pandas as pd
 
 
 def print_summary(cfg, aggregates: dict, calibrator, protocols) -> None:
+    """Print a formatted table of aggregate scores for every protocol."""
     name = Path(cfg.dataset).stem
     print(f"\n{name} · {cfg.de_method} · subsample={cfg.subsample} · seed={cfg.seed} · output={cfg.output}\n")
     agg_keys = sorted({k for v in aggregates.values() for k in v})
@@ -22,11 +24,16 @@ def print_summary(cfg, aggregates: dict, calibrator, protocols) -> None:
 
 
 def write_rows(cfg, rows: list, timestamp: str) -> Path:
+    """Write per-perturbation rows (raw controls + calibrated score) to a timestamped CSV."""
     out_dir = Path(cfg.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     df = pd.DataFrame(rows)
-    for col, val in (("dataset", Path(cfg.dataset).stem), ("de_method", cfg.de_method),
-                     ("subsample", cfg.subsample), ("seed", cfg.seed)):
+    for col, val in (
+        ("dataset", Path(cfg.dataset).stem),
+        ("de_method", cfg.de_method),
+        ("subsample", cfg.subsample),
+        ("seed", cfg.seed),
+    ):
         df[col] = val
     path = out_dir / f"{Path(cfg.dataset).stem}__{timestamp}__{cfg.output}.csv"
     df.to_csv(path, index=False)
@@ -37,9 +44,16 @@ def write_timing(cfg, timed: list, timestamp: str) -> Path:
     """Write per-protocol wall-clock seconds (one row per protocol)."""
     out_dir = Path(cfg.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    rows = [{"dataset": Path(cfg.dataset).stem, "protocol": p.name,
-             "representation": p.representation, "space": p.space, "seconds": seconds}
-            for p, seconds in timed]
+    rows = [
+        {
+            "dataset": Path(cfg.dataset).stem,
+            "protocol": p.name,
+            "representation": p.representation,
+            "space": p.space,
+            "seconds": seconds,
+        }
+        for p, seconds in timed
+    ]
     path = out_dir / f"{Path(cfg.dataset).stem}__{timestamp}__timing.csv"
     pd.DataFrame(rows).to_csv(path, index=False)
     return path
@@ -49,7 +63,8 @@ def write_de(cfg, genes, perturbations, results: dict, timestamp: str) -> Path:
     """Write per-gene DE (statistic + adjusted p) per method to an HDF5 file.
 
     Layout: ``genes``, ``perturbations``, and one group per method holding
-    ``statistic`` and ``pvalue_adj`` matrices (perturbations x genes)."""
+    ``statistic`` and ``pvalue_adj`` matrices (perturbations x genes).
+    """
     import h5py
 
     out_dir = Path(cfg.out_dir)

@@ -4,6 +4,7 @@ A DE method maps (target cells, reference cells) -> DEResult. The t-test is
 expressed through reusable ``moments`` / ``ttest_from_moments`` helpers so the
 context can cache a shared reference's moments and combine them cheaply.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -14,10 +15,43 @@ from ..registry import Registry
 from ..types import DEResult
 
 DE_METHODS = Registry("de-method")
+"""Registry of DE backends; keys are the ``--de-method`` names.
+
+Use :meth:`~scperteval.registry.Registry.register` to add a custom backend::
+
+    from scperteval.blocks.de import DE_METHODS, bh
+    from scperteval.types import DEResult
+
+    @DE_METHODS.register("my_test", description="My custom DE test")
+    def de_my_test(target, reference):
+        score = ...       # per-gene statistic, shape (G,)
+        pvalue = ...      # per-gene raw p-values, shape (G,)
+        return DEResult(score=score, pvalue=pvalue, pvalue_adj=bh(pvalue))
+
+Then ``--de-method my_test`` routes every DE-dependent unit through it.
+"""
 
 
 def moments(X):
-    """Per-gene (mean, sample variance, n) for a cell matrix, sparse- or dense-aware."""
+    """Per-gene mean, sample variance, and cell count for a cell matrix.
+
+    Sparse- and dense-aware; uses :math:`\\text{Var}(X) = E[X^2] - E[X]^2`
+    with Bessel's correction.
+
+    Parameters
+    ----------
+    X : array-like, shape ``(n, G)``
+        Cell matrix (sparse or dense).
+
+    Returns
+    -------
+    mean : numpy.ndarray, shape ``(G,)``
+        Per-gene sample mean.
+    variance : numpy.ndarray, shape ``(G,)``
+        Per-gene sample variance (floored at 0).
+    n : int
+        Number of cells.
+    """
     n = X.shape[0]
     if sp.issparse(X):
         m = np.asarray(X.mean(0)).ravel()
@@ -31,7 +65,22 @@ def moments(X):
 
 
 def bh(pvalue: np.ndarray) -> np.ndarray:
-    """Benjamini-Hochberg adjusted p-values."""
+    """Benjamini-Hochberg adjusted p-values for FDR control :cite:p:`Vollenweider_2026`.
+
+    Applied gene-wise inside each DE method to control the false discovery rate
+    across genes. The same procedure is used across perturbations to summarise
+    the overall sensitivity of a metric — see :cite:t:`Vollenweider_2026`.
+
+    Parameters
+    ----------
+    pvalue : numpy.ndarray
+        Array of raw p-values; non-finite values are carried through as ``nan``.
+
+    Returns
+    -------
+    numpy.ndarray
+        BH-adjusted p-values clipped to [0, 1]; same shape as ``pvalue``.
+    """
     p = np.asarray(pvalue, dtype=np.float64)
     out = np.full(p.shape, np.nan)
     idx = np.where(np.isfinite(p))[0]
@@ -44,11 +93,36 @@ def bh(pvalue: np.ndarray) -> np.ndarray:
 
 
 def ttest_from_moments(mt, vt, nt, mr, vr, nr) -> DEResult:
-    """Welch's t-test (scanpy convention); score = t-statistic."""
+    """Welch's t-test from pre-computed per-gene moments (scanpy convention).
+
+    Accepts moments directly so the context can cache the reference's moments
+    once and combine them cheaply for every perturbation. The ``score`` field
+    of the returned :class:`~scperteval.types.DEResult` is the t-statistic.
+
+    Parameters
+    ----------
+    mt : numpy.ndarray, shape ``(G,)``
+        Target per-gene means.
+    vt : numpy.ndarray, shape ``(G,)``
+        Target per-gene sample variances.
+    nt : int
+        Number of target cells.
+    mr : numpy.ndarray, shape ``(G,)``
+        Reference per-gene means.
+    vr : numpy.ndarray, shape ``(G,)``
+        Reference per-gene sample variances.
+    nr : int
+        Number of reference cells.
+
+    Returns
+    -------
+    ~scperteval.types.DEResult
+        ``score`` is the Welch t-statistic; ``pvalue_adj`` is BH-adjusted.
+    """
     se2 = vt / nt + vr / nr
     with np.errstate(divide="ignore", invalid="ignore"):
         t = (mt - mr) / np.sqrt(se2)
-        df = se2 ** 2 / ((vt / nt) ** 2 / max(nt - 1, 1) + (vr / nr) ** 2 / max(nr - 1, 1))
+        df = se2**2 / ((vt / nt) ** 2 / max(nt - 1, 1) + (vr / nr) ** 2 / max(nr - 1, 1))
     t = np.nan_to_num(t, nan=0.0, posinf=0.0, neginf=0.0)
     df = np.where(np.isfinite(df) & (df > 0), df, 1.0)
     pval = np.nan_to_num(2.0 * stats.t.sf(np.abs(t), df), nan=1.0)
@@ -57,6 +131,7 @@ def ttest_from_moments(mt, vt, nt, mr, vr, nr) -> DEResult:
 
 @DE_METHODS.register("t-test", description="Welch's t-test (default) — moment-based and fast")
 def de_ttest(target, reference) -> DEResult:
+    """Welch's t-test between target and reference cell matrices."""
     return ttest_from_moments(*moments(target), *moments(reference))
 
 
@@ -71,8 +146,7 @@ def de_ttest_overestim(target, reference) -> DEResult:
     Identical to Welch's t-test except the reference group's cell count is replaced by the
     target's, which inflates the reference standard-error term ("overestimating" its variance
     for small target groups) and yields a more conservative statistic. Selectable as a DE
-    backend (``--de-method``/``--methods``) so new evaluation protocols can use it; no current
-    protocol does.
+    backend (``--de-method``/``--methods``); no current protocol uses it.
     """
     mt, vt, nt = moments(target)
     mr, vr, _nr = moments(reference)
@@ -97,10 +171,18 @@ def de_mwu(target, reference) -> DEResult:
     adata = ad.AnnData(np.vstack([Xt, Xr]).astype(np.float64))
     adata.var_names = genes
     adata.obs["_g"] = ["target"] * nt + ["reference"] * nr
-    df = asymptotic_wilcoxon(adata, is_log1p=True, group_keys="_g", reference="reference",
-                             n_threads=1, alternative="two-sided", use_continuity=True,
-                             tie_correct=True, return_as_scanpy=False)
-    sub = df.xs("target", level=0).reindex(genes)
+    df = asymptotic_wilcoxon(
+        adata,
+        is_log1p=True,
+        group_keys="_g",
+        reference="reference",
+        n_threads=1,
+        alternative="two-sided",
+        use_continuity=True,
+        tie_correct=True,
+        return_as_scanpy=False,
+    )
+    sub = df.xs("target", level=0).reindex(genes)  # pyright: ignore[reportAttributeAccessIssue]
     u = sub["statistic"].to_numpy(dtype=np.float64)
     pval = np.nan_to_num(sub["p_value"].to_numpy(dtype=np.float64), nan=1.0)
     cliff = 2.0 * u / (nt * nr) - 1.0
