@@ -117,7 +117,7 @@ html_theme_options = {
 pygments_style = "default"
 katex_prerender = shutil.which(katex.NODEJS_BINARY) is not None
 
-nitpick_ignore = [ # type: ignore
+nitpick_ignore = [  # type: ignore
     # Add exceptions here for links outside your control that fail to resolve
     #     ("py:class", "igraph.Graph"),
 ]
