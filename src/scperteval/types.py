@@ -43,8 +43,9 @@ class DEResult:
 
 @dataclass(frozen=True)
 class Param:
-    """A protocol's tunable knob — how a CLI value (``k=30``, ``padj=0.05``) is cast,
-    defaulted, and applied. ``space`` maps the value to a feature-space name; when it is
+    """A protocol's tunable knob: how a CLI value is cast, defaulted, and applied.
+
+    ``space`` maps the value (``k=30``, ``padj=0.05``) to a feature-space name; when it is
     ``None`` the value is passed straight to the metric as a keyword argument.
     """
 
@@ -106,10 +107,12 @@ class Protocol:
 
     @property
     def parameterised(self) -> bool:
+        """Whether this protocol takes a CLI-supplied parameter."""
         return self.param is not None
 
     def resolve(self, value) -> Protocol:
         """Concrete protocol for a tunable one at ``value`` (sets the space or metric arg)."""
+        assert self.param is not None  # resolve() is only called on parameterised protocols
         suffix = f"{value:g}" if isinstance(value, float) else str(value)
         name = f"{self.name}={suffix}"
         if self.param.space is not None:

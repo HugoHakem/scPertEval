@@ -50,6 +50,7 @@ class PredictionSet:
 
     @classmethod
     def load(cls, path: str, ds: Dataset, cfg: RunConfig) -> PredictionSet:
+        """Load a prediction ``.h5ad`` and gene-align it to ``ds``."""
         return cls(ad.read_h5ad(path), ds, cfg)
 
     def cells(self, pert: str) -> np.ndarray:

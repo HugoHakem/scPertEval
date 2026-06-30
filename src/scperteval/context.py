@@ -1,10 +1,13 @@
-"""The per-run engine: lazily builds and caches the shared building blocks, and
-turns a (perturbation, source) into the exact view a protocol consumes.
+"""The per-run engine that turns a (perturbation, source) into a protocol's view.
+
+Lazily builds and caches the shared building blocks, and turns a (perturbation, source)
+into the exact view a protocol consumes.
 """
 
 from __future__ import annotations
 
 import threading
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -14,6 +17,9 @@ from .dataset import Dataset, to_dense
 from .reference import Reference
 from .sources import SOURCES
 from .types import Protocol, RunConfig
+
+if TYPE_CHECKING:
+    from .predictions import PredictionSet
 
 
 class Context:
@@ -26,7 +32,7 @@ class Context:
     def __init__(self, dataset: Dataset, cfg: RunConfig):
         self.ds = dataset
         self.cfg = cfg
-        self.predictions = None  # a PredictionSet in prediction-scoring mode, else None
+        self.predictions: PredictionSet | None = None  # set in prediction-scoring mode
         self._local = threading.local()
         # Reentrant: several lazy initialisers (e.g. _ensure_ref_sums, ref_projection)
         # call reference() while already holding this lock, which a plain Lock would
@@ -35,19 +41,21 @@ class Context:
         self._de: dict = {}
         self._mom: dict = {}
         self._weights: dict = {}
-        self._pca = None
+        self._pca: Any = None
         self._pca_k = 0
-        self._control_mean = None
-        self._reference = None
+        self._control_mean: np.ndarray | None = None
+        self._reference: Reference | None = None
         self._ref_proj: dict = {}
-        self._ref_sums = None
+        self._ref_sums: tuple | None = None
 
     @property
     def perturbations(self):
+        """The list of perturbations evaluated in this run."""
         return self.ds.perturbations
 
     @property
     def current_pert(self):
+        """The perturbation the current worker thread is processing."""
         return getattr(self._local, "pert", None)
 
     @current_pert.setter
@@ -55,8 +63,9 @@ class Context:
         self._local.pert = value
 
     def warm(self, protocols):
-        """Precompute shared singletons before the parallel loop so per-perturbation
-        threads only ever write per-perturbation cache keys.
+        """Precompute shared singletons before the parallel loop.
+
+        So per-perturbation threads only ever write per-perturbation cache keys.
         """
         self.control_mean()
         if any(p.representation in ("population", "de") for p in protocols):
@@ -72,6 +81,7 @@ class Context:
             self.ref_projection(space)
 
     def view(self, pert: str, source: str, p: Protocol):
+        """Return ``source``'s datapoint for ``pert`` in the shape ``p`` consumes."""
         if p.representation == "population":
             if source == "all_perturbed":
                 return self._reference_population(p.space, pert)
@@ -84,6 +94,7 @@ class Context:
         raise ValueError(f"unknown protocol representation {p.representation!r}")
 
     def centroid(self, pert, source, centering):
+        """Pseudobulk centroid of ``source`` for ``pert``, optionally centered."""
         arr = SOURCES[source](self, pert)
         if SOURCES.meta(source).get("provides") == "centroid":
             v = np.asarray(arr, dtype=np.float64).ravel()
@@ -96,9 +107,10 @@ class Context:
         return v
 
     def _de_view(self, pert, source, p):
-        """GT -> truth labels (its DEResult); a candidate -> its |score| ranking.
-        The negative candidate is tested against ``neg_reference`` (e.g. control)
-        rather than ``reference`` (the all-perturbed sample), the hybrid DE setup.
+        """Return the DE view: the truth's DEResult, or a candidate's ``|score|`` ranking.
+
+        The negative candidate is tested against ``neg_reference`` (e.g. control) rather than
+        ``reference`` (the all-perturbed sample), the hybrid DE setup.
         """
         if source == self.cfg.truth:
             return self.de(pert, self.cfg.truth, p.reference)
@@ -106,8 +118,10 @@ class Context:
         return np.abs(self.de(pert, source, reference).score)
 
     def de(self, pert, source, reference="all_perturbed"):
-        """DE for one (source vs reference) comparison; the reference moments are
-        leave-one-out, so a perturbation is never compared against a sample of itself.
+        """Differential expression for one (source vs reference) comparison, cached.
+
+        The reference moments are leave-one-out, so a perturbation is never compared against
+        a sample of itself.
         """
         method = self.cfg.de_method
         key = (self._mom_key(source, pert), self._mom_key(reference, pert), method)
@@ -150,8 +164,9 @@ class Context:
     # -- the all-perturbed reference: one sample, served leave-one-out -------------
 
     def reference(self) -> Reference:
-        """The all-perturbed sample (subsampled + densified once), with each cell's
-        perturbation recorded so it can be served leave-one-out.
+        """The all-perturbed sample, subsampled and densified once.
+
+        Each cell's perturbation is recorded so the sample can be served leave-one-out.
         """
         if self._reference is None:
             with self._init_lock:
@@ -162,8 +177,9 @@ class Context:
         return self._reference
 
     def _reference_population(self, space, pert):
-        """The reference in a feature space with the target perturbation removed:
-        project the whole sample (cached for global spaces) then drop its rows.
+        """The reference in a feature space with the target perturbation removed.
+
+        Project the whole sample (cached for global spaces) then drop its rows.
         """
         ref = self.reference()
         if SPACES.meta(space).get("global_space"):
@@ -182,8 +198,10 @@ class Context:
         return self._ref_proj[space]
 
     def _ensure_ref_sums(self):
-        """Cache the reference's column sums and sums-of-squares once, so leave-one-out
-        moments are an O(target cells) subtraction rather than a re-densify per perturbation.
+        """Cache the reference's column sums and sums-of-squares once.
+
+        Leave-one-out moments are then an O(target cells) subtraction rather than a
+        re-densify per perturbation.
         """
         if self._ref_sums is None:
             with self._init_lock:
@@ -207,6 +225,7 @@ class Context:
         return mean, var, k
 
     def control_mean(self):
+        """The control centroid (cached)."""
         if self._control_mean is None:
             with self._init_lock:
                 if self._control_mean is None:
@@ -225,8 +244,10 @@ class Context:
     PCA_FIT_CAP = 50000
 
     def _fit_pca(self, n_components):
-        """Fit PCA on (nearly) all cells; the subsample cap is for the O(n^2)
-        distance populations, not the PCA basis, which needs many cells to be stable.
+        """Fit PCA on (nearly) all cells.
+
+        The subsample cap is for the O(n^2) distance populations, not the PCA basis, which
+        needs many cells to be stable.
         """
         from sklearn.decomposition import PCA
 

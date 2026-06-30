@@ -34,6 +34,7 @@ class Registry:
 
     def register(self, name: str, **meta) -> Callable:
         """Decorator that registers a function under ``name`` with optional metadata."""
+
         def deco(fn: Callable) -> Callable:
             self._items[name] = (fn, meta)
             return fn

@@ -1,6 +1,7 @@
-"""Calibrators turn the raw metric values measured on each control into a final
-per-metric score. Each declares the control roles it needs, a per-perturbation
-combine, and a cross-perturbation aggregate.
+"""Calibrators turn raw control metric values into a final per-metric score.
+
+Each declares the control roles it needs, a per-perturbation combine, and a
+cross-perturbation aggregate.
 """
 
 from __future__ import annotations

@@ -18,7 +18,6 @@ from __future__ import annotations
 import numpy as np
 from sklearn.metrics import average_precision_score, roc_auc_score
 
-
 # --- shared parameter blocks, substituted into docstrings at decoration time ---
 
 _CENTROID = """\
@@ -69,18 +68,20 @@ def _doc(**subs):
     This decorator detects the column position of each placeholder and re-indents all
     continuation lines to match, so the substituted text stays inside the RST section.
     """
+
     def deco(fn):
         doc = fn.__doc__
         for key, value in subs.items():
             placeholder = f"%({key})s"
             while placeholder in doc:
                 idx = doc.index(placeholder)
-                line_start = doc.rfind('\n', 0, idx) + 1
-                indent = ' ' * (idx - line_start)
-                indented = ('\n' + indent).join(value.split('\n'))
-                doc = doc[:idx] + indented + doc[idx + len(placeholder):]
+                line_start = doc.rfind("\n", 0, idx) + 1
+                indent = " " * (idx - line_start)
+                indented = ("\n" + indent).join(value.split("\n"))
+                doc = doc[:idx] + indented + doc[idx + len(placeholder) :]
         fn.__doc__ = doc
         return fn
+
     return deco
 
 
@@ -105,7 +106,7 @@ def _within_unbiased(sq, n):
 
 @_doc(params=_CENTROID)
 def pearson(gt, prediction, ctx):
-    """Pearson correlation between pseudobulk profiles.
+    r"""Pearson correlation between pseudobulk profiles.
 
     .. math::
 
@@ -126,7 +127,7 @@ def pearson(gt, prediction, ctx):
 
 @_doc(params=_CENTROID)
 def mse(gt, prediction, ctx):
-    """Mean squared error between pseudobulk profiles.
+    r"""Mean squared error between pseudobulk profiles.
 
     .. math::
 
@@ -146,7 +147,7 @@ def mse(gt, prediction, ctx):
 
 @_doc(params=_CENTROID_W)
 def weighted_mse(gt, prediction, ctx, exp=2.0):
-    """MSE weighted by ground-truth effect size raised to ``exp``.
+    r"""MSE weighted by ground-truth effect size raised to ``exp``.
 
     Weights are min-max normalised per-gene; high-effect genes contribute more.
 
@@ -176,7 +177,7 @@ def weighted_mse(gt, prediction, ctx, exp=2.0):
 
 @_doc(params=_POPULATION)
 def energy_distance(gt, prediction, ctx):
-    """Székely–Rizzo energy distance with bias-corrected within-population terms.
+    r"""Székely–Rizzo energy distance with bias-corrected within-population terms.
 
     .. math::
 
@@ -207,7 +208,7 @@ def energy_distance(gt, prediction, ctx):
 
 @_doc(params=_POPULATION)
 def unbiased_mmd_median(gt, prediction, ctx):
-    """Unbiased RBF-MMD² with median-heuristic bandwidth (Gretton 2012).
+    r"""Unbiased RBF-MMD² with median-heuristic bandwidth (Gretton 2012).
 
     .. math::
 
@@ -254,7 +255,7 @@ _geomloss_cache: dict = {}
 
 @_doc(params=_POPULATION)
 def sinkhorn_w2(gt, prediction, ctx, blur=0.05):
-    """Debiased Sinkhorn 2-Wasserstein distance (geomloss, p=2).
+    r"""Debiased Sinkhorn 2-Wasserstein distance (geomloss, p=2).
 
     .. math::
 
@@ -296,7 +297,7 @@ def sinkhorn_w2(gt, prediction, ctx, blur=0.05):
 
 @_doc(params=_DATASET)
 def rank_retrieval(gt, prediction, ctx, transpose=False):
-    """Cross-perturbation retrieval rank — dataset-scope metric, lower is better.
+    r"""Cross-perturbation retrieval rank — dataset-scope metric, lower is better.
 
     Builds the ``(n x n)`` squared-distance matrix between all predicted and ground-truth
     centroids, then reads off the diagonal rank (column-wise by default).
@@ -378,7 +379,7 @@ def de_auroc(gt, prediction, ctx):
 
 @_doc(params=_DE)
 def de_overlap(gt, prediction, ctx, k=50):
-    """Top-k overlap between ground-truth and predicted DE gene rankings.
+    r"""Top-k overlap between ground-truth and predicted DE gene rankings.
 
     .. math::
 

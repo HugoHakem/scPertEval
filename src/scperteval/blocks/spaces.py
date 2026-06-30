@@ -20,6 +20,7 @@ SPACES = Registry("space")
 
 @SPACES.register("full", global_space=True, description="all genes, no transform")
 def space_full(X, ctx, pert):
+    """Identity space: all genes, densified, no transform."""
     return to_dense(X)
 
 
@@ -32,7 +33,11 @@ def register_de_space(name, field, top=None, threshold=None, description=""):
 
     def space(X, ctx, pert):
         values = _field(ctx.de(pert, ctx.cfg.truth), field)
-        keep = np.argsort(-np.abs(values))[:top] if top is not None else np.where(threshold(values))[0]
+        if top is not None:
+            keep = np.argsort(-np.abs(values))[:top]
+        else:
+            assert threshold is not None  # register_de_space takes exactly one of top/threshold
+            keep = np.where(threshold(values))[0]
         return to_dense(X[:, keep])
 
     SPACES.add(name, space, description=description)

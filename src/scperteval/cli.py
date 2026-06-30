@@ -20,7 +20,7 @@ from .types import Protocol, RunConfig
 
 def _concrete(p: Protocol) -> Protocol:
     """A tunable protocol at its default value; a fixed protocol unchanged."""
-    return p.resolve(p.param.default) if p.parameterised else p
+    return p.resolve(p.param.default) if p.parameterised else p  # type: ignore[union-attr]
 
 
 def _resolve_token(token: str) -> list[Protocol]:
@@ -33,7 +33,7 @@ def _resolve_token(token: str) -> list[Protocol]:
         p = PROTOCOLS.get(name)
         if p is None or not p.parameterised:
             raise SystemExit(f"unknown tunable protocol {name!r}; try `scperteval list protocols`")
-        return [p.resolve(p.param.cast(value))]
+        return [p.resolve(p.param.cast(value))]  # type: ignore[union-attr]
     p = PROTOCOLS.get(token)
     if p is None:
         raise SystemExit(f"unknown protocol {token!r}; try `scperteval list protocols`")
@@ -41,6 +41,7 @@ def _resolve_token(token: str) -> list[Protocol]:
 
 
 def resolve_protocols(specs: list[str]) -> list[Protocol]:
+    """Resolve CLI protocol specs to a de-duplicated list of concrete protocols."""
     out: list[Protocol] = []
     for spec in specs:
         for token in spec.split(","):
@@ -54,9 +55,10 @@ def resolve_protocols(specs: list[str]) -> list[Protocol]:
 
 
 def _evaluate(cfg: RunConfig, protocols, ctx, quiet: bool) -> None:
-    """Run every protocol over the dataset, print the summary, and write the per-perturbation
-    CSV. Shared by ``calibrate`` and ``score`` (prediction vs ground truth); they differ only
-    in how ``ctx`` is built and which calibrator ``cfg.output`` selects.
+    """Run every protocol over the dataset, print the summary, and write the CSV.
+
+    Shared by ``calibrate`` and ``score`` (prediction vs ground truth); they differ only in
+    how ``ctx`` is built and which calibrator ``cfg.output`` selects.
     """
     calibrator = CALIBRATORS[cfg.output]
     ctx.warm(protocols)
@@ -76,6 +78,7 @@ def _evaluate(cfg: RunConfig, protocols, ctx, quiet: bool) -> None:
 
 
 def cmd_calibrate(args) -> None:
+    """Run the ``calibrate`` command: score protocols against built-in controls (DRF/BDS)."""
     protocols = resolve_protocols(args.protocols or ["all"])
     cfg = RunConfig(
         dataset=args.dataset,
@@ -98,6 +101,7 @@ def cmd_calibrate(args) -> None:
 
 
 def cmd_score(args) -> None:
+    """Run the ``score`` command: score predictions against ground truth, per protocol."""
     protocols = resolve_protocols(args.protocols or ["all"])
     cfg = RunConfig(
         dataset=args.dataset,
@@ -115,6 +119,7 @@ def cmd_score(args) -> None:
         predictions=args.predictions,
         truth="gt_all_cells",
     )
+    assert cfg.predictions is not None  # required positional on the score subcommand
     ds = Dataset.load(cfg.dataset, cfg)
     ctx = Context(ds, cfg)
     ctx.predictions = PredictionSet.load(cfg.predictions, ds, cfg)
@@ -122,6 +127,7 @@ def cmd_score(args) -> None:
 
 
 def cmd_de(args) -> None:
+    """Run the ``de`` command: export per-gene differential expression to HDF5."""
     methods = [m.strip() for m in args.methods.split(",") if m.strip()]
     cfg = RunConfig(
         dataset=args.dataset,
@@ -144,6 +150,8 @@ def cmd_de(args) -> None:
 
 
 def cmd_list(args) -> None:
+    """Run the ``list`` command: print the available building blocks of one category."""
+
     def reg(registry, fmt):
         return [fmt(n, registry.meta(n)) for n in registry.names()]
 
@@ -163,10 +171,13 @@ def cmd_list(args) -> None:
         lines = reg(SOURCES, lambda n, m: f"{n:14s} ({m.get('provides')}) — {m.get('description', '')}")
     elif args.what == "calibrators":
         lines = [f"{n:6s} — {c.description}" for n, c in CALIBRATORS.items()]
+    else:
+        raise AssertionError(f"unexpected list target: {args.what!r}")
     print("\n".join(lines))
 
 
 def main(argv=None) -> None:
+    """Parse arguments and dispatch to the selected subcommand."""
     parser = argparse.ArgumentParser(prog="scperteval", description=__doc__)
     sub = parser.add_subparsers(dest="cmd", required=True)
 

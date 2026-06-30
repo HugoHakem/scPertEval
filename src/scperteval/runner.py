@@ -13,13 +13,15 @@ from .types import Calibrator, Protocol
 
 
 def n_workers(cfg) -> int:
+    """Resolve the worker-thread count (``0`` = auto: CPU count minus 2, capped at 16)."""
     return cfg.workers if cfg.workers > 0 else max(1, min(16, (os.cpu_count() or 2) - 2))
 
 
 def resolve_roles(p: Protocol, cfg) -> dict:
-    """Map each candidate role a calibrator may require to a source name. ``positive`` /
-    ``negative`` come from the protocol (or a CLI override); ``prediction`` is always the
-    model-prediction source (used by the ``score`` calibrator).
+    """Map each candidate calibrator role to a source name.
+
+    ``positive`` / ``negative`` come from the protocol (or a CLI override); ``prediction``
+    is always the model-prediction source (used by the ``score`` calibrator).
     """
     return {
         "positive": cfg.positive if cfg.positive != "auto" else p.positive,
@@ -74,11 +76,11 @@ def _run_per_perturbation(p: Protocol, ctx, calibrator: Calibrator, needed: dict
 
 
 def _run_dataset(p: Protocol, ctx, calibrator: Calibrator, needed: dict):
-    """Dataset-scope protocols: build every perturbation's gt and control datapoints, hand
-    the metric the full lists at once, then read off each perturbation's score.
+    """Score dataset-scope protocols by handing the metric all perturbations at once.
 
-    Perturbations are treated as a single group (these datasets are single-covariate);
-    drf instead ranks within each covariate group.
+    Build every perturbation's gt and control datapoints, call the metric once on the full
+    lists, then read off each perturbation's score. Perturbations are treated as a single
+    group (these datasets are single-covariate); drf instead ranks within each covariate group.
     """
     perts = ctx.perturbations
 
@@ -100,8 +102,10 @@ def _run_dataset(p: Protocol, ctx, calibrator: Calibrator, needed: dict):
 
 
 def compute_de_export(ctx, methods):
-    """{method: (statistic, pvalue_adj)} matrices (perturbations x genes) for each
-    method's GT(first-half)-vs-all-perturbed differential expression.
+    """Per-gene DE matrices for each method, for export.
+
+    Returns ``{method: (statistic, pvalue_adj)}`` matrices (perturbations x genes) for each
+    method's ground-truth-vs-all-perturbed differential expression.
     """
     out = {}
     for method in methods:

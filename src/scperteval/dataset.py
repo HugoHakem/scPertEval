@@ -29,6 +29,7 @@ class Dataset:
 
     @classmethod
     def load(cls, path: str, cfg: RunConfig) -> Dataset:
+        """Load a dataset from a preprocessed ``.h5ad`` path."""
         return cls(ad.read_h5ad(path), cfg)
 
     def _index(self):
@@ -51,6 +52,7 @@ class Dataset:
         self._mean_sum = self._mean_matrix.sum(0)
 
     def cells(self, pert: str, half: str | None = None) -> np.ndarray:
+        """Cells for ``pert``: the first/second split half, or all cells when ``half`` is None."""
         if half == "first":
             idx = self.halves[pert][0]
         elif half == "second":
@@ -60,25 +62,31 @@ class Dataset:
         return self.adata.X[idx]
 
     def control_cells(self, cap: int) -> np.ndarray:
+        """A capped subsample of the non-targeting control cells."""
         return self.adata.X[self._cap(self.control_idx, cap, "control")]
 
     def all_perturbed_indices(self, cap: int) -> np.ndarray:
-        """One all-perturbed subsample (the reference sample, shared across perturbations).
+        """Indices of one all-perturbed subsample (the shared reference sample).
+
         The "pool" tag is a fixed reproducibility salt for the draw, not a public name.
         """
         return self._cap(np.where(self.pert != self.cfg.control_label)[0], cap, "pool")
 
     def allpert_mean_except(self, pert: str) -> np.ndarray:
+        """Mean of all per-perturbation means, excluding ``pert`` (leave-one-out)."""
         k = len(self.perturbations)
         return (self._mean_sum - self._mean_matrix[self._row[pert]]) / max(k - 1, 1)
 
     def allpert_mean(self) -> np.ndarray:
-        """Mean of all per-perturbation means (no target exclusion); a single vector
-        shared across perturbations, used as the cross-perturbation ranking baseline.
+        """Mean of all per-perturbation means (no target exclusion).
+
+        A single vector shared across perturbations, used as the cross-perturbation ranking
+        baseline.
         """
         return self._mean_sum / max(len(self.perturbations), 1)
 
     def control_mean(self) -> np.ndarray:
+        """Pseudobulk centroid of the control cells."""
         return np.asarray(self.adata.X[self.control_idx].mean(0)).ravel()
 
     def _cap(self, idx: np.ndarray, cap: int, *tags) -> np.ndarray:
@@ -89,4 +97,5 @@ class Dataset:
 
 
 def to_dense(X) -> np.ndarray:
+    """Return ``X`` as a dense array (densifying if sparse)."""
     return X.toarray() if sp.issparse(X) else np.asarray(X)
