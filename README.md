@@ -7,10 +7,21 @@ Evaluating predictions across a dataset's
 perturbations reduces to a single question: how different is one group of cells from another? To answer this, an **evaluation protocol** is defined: a specific formulation of a metric, along with some representation of the perturbation data fed to the metric. However, there are a multitude of possibilities -- many already reflected in the literature -- and it can be challenging to compare and contrast protocols across the field and ultimately choose the right approach for a given dataset and problem space. 
 
 scPertEval renders each protocol as a short, readable building block to run, read, reuse, and contribute back -- a place for
-collaboration and alignment in the field. Run the tool by specifying a dataset, one or more protocols, and a method of differential expression; 
-the tool outputs calibration data: the **Dynamic Range Fraction (DRF)** and the 
-**Bound Discrimination Score (BDS)** — quantifying how well the protocol separates real perturbation
-signal from an uninformative baseline (see [How scoring works](#how-scoring-works-the-calibration)).
+collaboration and alignment in the field.
+
+The same catalog of protocols backs three commands, each a different use case:
+
+- **`score`** — score a model's predictions against ground truth. Each protocol's metric is
+  applied to your **predicted** cells vs the **real** cells, one score per perturbation — the
+  conventional "how good is my prediction" evaluation (see
+  [Scoring predictions](#scoring-predictions-against-ground-truth)).
+- **`calibrate`** — calibrate a protocol against empirical positive/negative controls built from
+  the dataset itself, reporting the **Dynamic Range Fraction (DRF)** and the **Bound Discrimination
+  Score (BDS)** — quantifying how well the protocol separates real perturbation signal from an
+  uninformative baseline (see [How calibration works](#how-calibration-works)). Use this to decide
+  whether a metric is trustworthy in the first place.
+- **`de`** — export per-gene differential expression (statistic + adjusted p) to HDF5, since DE
+  is tightly coupled with several protocols.
 
 Our accompanying publiciation: TODO_LINK_HERE
 
@@ -46,17 +57,21 @@ No gcloud account is needed — each file is also reachable over plain HTTPS at
 
 ```bash
 # protocols by name — including parameterised ones (set k / padj per protocol)
-scperteval run data/wessels23.h5ad -p pearson_ctrl,unbiased_mmd_median_pca_k=20,de_overlap_k=10 --de-method t-test
+scperteval calibrate data/wessels23.h5ad -p pearson_ctrl,unbiased_mmd_median_pca_k=20,de_overlap_k=10 --de-method t-test
 
 # a parameterised protocol with no value uses its default (k=50, padj=0.05)
-scperteval run data/wessels23.h5ad -p unbiased_mmd_median_top_k --de-method MWU
+scperteval calibrate data/wessels23.h5ad -p unbiased_mmd_median_top_k --de-method MWU
 
 # a whole group, or everything (parameterised protocols use their defaults)
-scperteval run data/wessels23.h5ad -p distributional --de-method MWU
-scperteval run data/wessels23.h5ad -p all --de-method t-test
+scperteval calibrate data/wessels23.h5ad -p distributional --de-method MWU
+scperteval calibrate data/wessels23.h5ad -p all --de-method t-test
 
 # DRF calibration only (compute DRF only; exclude BDS)
-scperteval run data/wessels23.h5ad -p pearson_ctrl --de-method t-test --output drf
+scperteval calibrate data/wessels23.h5ad -p pearson_ctrl --de-method t-test --output drf
+
+# SCORE predictions against ground truth — predicted cells vs real cells, per protocol.
+# predictions.h5ad must have the same genes and perturbation labels as the dataset.
+scperteval score data/wessels23.h5ad predictions.h5ad -p pearson,mse,de_auprc --de-method t-test
 
 # DE only — writes per-gene statistic + adjusted p to HDF5 (no protocol calibration)
 # Provided as a convenience, since DE methods are tightly coupled with some evaluation protocols
@@ -66,20 +81,21 @@ scperteval de data/wessels23.h5ad --methods MWU
 scperteval list protocols        # also: de-methods | spaces | sources | calibrators
 ```
 
-Each run prints a summary table and writes a per-perturbation CSV
-`<dataset>__<timestamp>__drf.csv` (the raw control values and the calibrated score for
-every perturbation). `--profile` adds a per-protocol wall-clock timing CSV.
+Each command prints a summary table and writes a per-perturbation CSV named
+`<dataset>__<timestamp>__<output>.csv`: `calibrate` writes the raw control values and the
+calibrated DRF/BDS per perturbation (`…__drf.csv` / `…__bds.csv`); `score` writes the raw metric
+value per perturbation (`…__score.csv`). `--profile` adds a per-protocol wall-clock timing CSV.
 
 **DE backends** (`scperteval list de-methods`): `t-test` (default, Welch's, moment-based),
 `MWU` (Cliff's δ via illico), and `t-test_overestim_var` (scanpy's conservative-variance
 variant — the reference variance is scaled by the target's cell count). Select one with
-`--de-method` for a `run`, or list several with `--methods` for a `de` export. The overestim
+`--de-method` for a `calibrate`/`score`, or list several with `--methods` for a `de` export. The overestim
 variant is a selectable backend for new protocols; no current protocol uses it.
 
-<details><summary><code>scperteval run --help</code></summary>
+<details><summary><code>scperteval calibrate --help</code></summary>
 
 ```
-usage: scperteval run [-h] [-p PROTOCOLS] [--de-method {MWU,t-test,t-test_overestim_var}]
+usage: scperteval calibrate [-h] [-p PROTOCOLS] [--de-method {MWU,t-test,t-test_overestim_var}]
                 [--subsample SUBSAMPLE] [--seed SEED] [--positive POSITIVE]
                 [--negative NEGATIVE] [--output {drf,bds}] [--out-dir OUT_DIR]
                 [--workers WORKERS] [--perturbation-key PERTURBATION_KEY]
@@ -100,6 +116,26 @@ usage: scperteval run [-h] [-p PROTOCOLS] [--de-method {MWU,t-test,t-test_overes
 ```
 </details>
 
+<details><summary><code>scperteval score --help</code></summary>
+
+```
+usage: scperteval score [-h] [-p PROTOCOLS] [--de-method {MWU,t-test,t-test_overestim_var}]
+                [--subsample SUBSAMPLE] [--seed SEED] [--out-dir OUT_DIR] [--workers WORKERS]
+                [--perturbation-key PERTURBATION_KEY] [--control-label CONTROL_LABEL]
+                [--min-cells MIN_CELLS] [--profile] [--quiet]
+                dataset predictions
+
+  dataset               preprocessed .h5ad — the ground truth (real cells)
+  predictions           predicted .h5ad — same genes and perturbation labels as the dataset
+  -p, --protocols       comma-separated names, a group, or 'all'
+  --de-method           DE backend for the de_* protocols, the top_k/degs spaces, and WMSE weights
+  --subsample           cells in the all-perturbed reference (the ground truth is never subsampled)
+```
+
+Unlike `calibrate`, there are no `--positive`/`--negative`/`--output` options: the candidate is
+always your prediction and the output is always the raw `score`.
+</details>
+
 ## Use it from Python
 
 Install with `pip install scperteval` (or, from this repo,
@@ -109,9 +145,14 @@ The simplest path mirrors the CLI — call it via subprocess, exactly as the fig
 ```python
 import subprocess, sys
 
-subprocess.run([sys.executable, "-m", "scperteval", "run", "data/wessels23.h5ad",
+subprocess.run([sys.executable, "-m", "scperteval", "calibrate", "data/wessels23.h5ad",
                 "-p", "all", "--de-method", "t-test", "--out-dir", "results"], check=True)
 # -> results/wessels23__<timestamp>__drf.csv  (raw control values + calibrated DRF per perturbation)
+
+# score predictions against ground truth instead:
+subprocess.run([sys.executable, "-m", "scperteval", "score", "data/wessels23.h5ad",
+                "predictions.h5ad", "-p", "all", "--out-dir", "results"], check=True)
+# -> results/wessels23__<timestamp>__score.csv  (raw metric value per perturbation)
 ```
 
 ## Look up an Evaluation Protocol
@@ -119,8 +160,9 @@ subprocess.run([sys.executable, "-m", "scperteval", "run", "data/wessels23.h5ad"
 Two files define each protocol:
 
 - **[`scperteval/protocols/metrics.py`](scperteval/protocols/metrics.py)** — the metric, as a
-  pure function of the ground truth and a `prediction` (whichever control is being scored,
-  positive or negative). e.g. `mse`, `mmd`, `de_auprc`:
+  pure function of the ground truth and a `prediction` (the candidate being scored — a positive
+  or negative control under `calibrate`, or your model's output under `score`). e.g. `mse`, `mmd`,
+  `de_auprc`:
   ```python
   def mse(gt, prediction, ctx):
       return float(np.mean((gt - prediction) ** 2))
@@ -152,9 +194,10 @@ Here is a complete new protocol: mean absolute error on the standard pseudobulk 
        return float(np.mean(np.abs(gt - prediction)))
    ```
    Every metric function has this signature. `gt` is one perturbation's ground-truth
-   profile; `prediction` is a control being compared against it (scPertEval calls the function
-   once for the positive control and once for the negative). `ctx` is the dataset context,
-   needed by only a few metrics — ignore it otherwise. Return a single number.
+   profile; `prediction` is the candidate being compared against it (under `calibrate`, scPertEval
+   calls the function once for the positive control and once for the negative; under `score`, once
+   with your model's prediction). `ctx` is the dataset context, needed by only a few metrics —
+   ignore it otherwise. Return a single number.
 
 2. Add a row to [`scperteval/protocols/table.py`](scperteval/protocols/table.py):
    ```python
@@ -163,7 +206,7 @@ Here is a complete new protocol: mean absolute error on the standard pseudobulk 
             better="lower", perfect=0.0)
    ```
 
-Run it with `scperteval run data.h5ad -p mae`. That is the whole protocol: MAE between each
+Run it with `scperteval calibrate data.h5ad -p mae`. That is the whole protocol: MAE between each
 perturbation's pseudobulk profile and its positive and negative controls, scored as
 lower-is-better toward a perfect of 0.
 
@@ -190,7 +233,7 @@ That row is the spec; parameters include:
 |---|---|
 | `centroid` | a 1-D pseudobulk vector (one value per gene) |
 | `population` | a `(cells × genes)` matrix |
-| `de` | a `DEResult` (for `gt`) / per-gene `|score|` ranking (for a prediction) |
+| `de` | a `DEResult` (for the ground truth) / per-gene `|score|` ranking (for a prediction) |
 
 **`scope`** is the independent companion axis — *how many* perturbations the metric sees at once:
 
@@ -253,10 +296,16 @@ all_perturbed  (cells) — all-perturbed reference sample, leave-one-out (single
 all_perturbed_mean (centroid) — all-perturbed mean, excluding the target — leave-one-out (pseudobulk sibling of all_perturbed; pseudobulk negative control)
 control        (cells) — non-targeting control cells
 global_mean    (centroid) — mean of all perturbations — shared baseline for the ranking protocols
-gt             (cells) — ground truth — the first half of a perturbation's cells
+gt_all_cells   (cells) — ground truth — all of a perturbation's real cells (prediction-scoring truth)
+gt_half        (cells) — ground truth — the first half of a perturbation's cells (calibration truth)
 interpolated   (centroid) — interpolated duplicate — DE-weighted blend of the held-out half and the dataset mean (pseudobulk positive control)
+prediction     (cells) — model-predicted cells for the perturbation, from the --predictions h5ad
 tech_dup       (cells) — technical duplicate — the held-out second half (single-cell positive control)
 ```
+
+The truth source is chosen by the command, not by a protocol: `calibrate` uses `gt_half` and
+holds the other half out to build the positive control; `score` uses `gt_all_cells` and compares
+it to `prediction`.
 
 Each `provides` cells or a pseudobulk `centroid`. Use via `positive=`/`negative=` (or
 `--positive`/`--negative`). To add another, see [Add a control source](#add-a-control-source).
@@ -267,9 +316,11 @@ Each `provides` cells or a pseudobulk `centroid`. Use via `positive=`/`negative=
 $ scperteval list calibrators
 drf    — Dynamic Range Fraction — mean/median over perturbations (Miller et al. 2025)
 bds    — Bound Discrimination Score — fraction of perturbations the positive control wins (SBB 2026)
+score  — raw metric of a prediction vs ground truth — mean/median over perturbations (prediction-scoring mode)
 ```
 
-Chosen with `--output`. To add another, see [Add a calibrator](#add-a-calibrator).
+`drf`/`bds` are chosen with `calibrate --output`; `score` is selected automatically by the
+`score` command. To add another, see [Add a calibrator](#add-a-calibrator).
 
 ### More examples
 
@@ -290,13 +341,13 @@ top-50 DEGs:
 Protocol("mae_top50", M.mae, representation="centroid", space="top_50", **_PB, **_LOWER)
 ```
 
-**Expose the space as a knob (parameterised).** To make `k` adjustable per run, add a
+**Expose the space as a knob (parameterised).** To make `k` adjustable per invocation, add a
 `param` to the same `Protocol(...)` row — nothing else changes. The row's name carries the
 parameter, and the value is supplied on the CLI:
 ```python
 Protocol("mae_top_k", M.mae, representation="centroid", param=top_k, **_PB, **_LOWER)
 ```
-Then `scperteval run data.h5ad -p mae_top_k=30` (or `mae_top_k` for the default `k=50`). The
+Then `scperteval calibrate data.h5ad -p mae_top_k=30` (or `mae_top_k` for the default `k=50`). The
 families are `top_k` (top-k DEGs), `pca_k` (k PCs), and `degs_padj` (DEGs at adjusted
 p < padj) for the space, and `overlap_k` to feed an integer straight to the metric.
 
@@ -387,7 +438,32 @@ CALIBRATORS["my_score"] = Calibrator(
 
 Then `--output my_score` reports it.
 
-## How scoring works (the calibration)
+## Scoring predictions against ground truth
+
+`scperteval score dataset.h5ad predictions.h5ad` is the conventional evaluation: each protocol's
+metric is applied to your **predicted** cells against the **real** cells, one score per
+perturbation. It runs the *same* protocol catalog as `calibrate`; only two pieces differ.
+
+- **ground truth** — *all* of a perturbation's real cells (the `gt_all_cells` source). Unlike
+  calibration, no half is held out and no positive/negative controls are built — the ground
+  truth is the whole real population.
+- **prediction** — the matching cells from your `predictions.h5ad` (the `prediction` source).
+  The prediction file must contain the dataset's exact gene set (any order — columns are
+  reordered by name so the comparison lines up gene-for-gene) and the same perturbation labels.
+  A gene-set mismatch, or a perturbation present in the dataset but absent from the predictions,
+  raises an error naming exactly what's wrong.
+
+The `score` calibrator reports each protocol's raw metric value per perturbation and its
+mean/median across perturbations, written to `<dataset>__<timestamp>__score.csv`. Higher- vs
+lower-is-better follows each protocol's `better` field, exactly as in calibration.
+
+Architecturally this reuses everything — the per-perturbation loop, every metric, representation,
+and feature space are shared with `calibrate`. The only differences are the **truth source**
+(`gt_all_cells` instead of the held-out `gt_half`) and the **calibrator** (`score`, which needs
+only the prediction, instead of `drf`/`bds`, which need both controls). The DE-derived feature
+spaces (`top_k`, `degs`) and the WMSE weights are computed from this same all-cells ground truth.
+
+## How calibration works
 
 scPertEval's claim — a usable catalog of protocols — rests on **calibrating** each protocol
 against two empirical controls per perturbation, so you can see whether a metric actually

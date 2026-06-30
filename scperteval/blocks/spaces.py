@@ -30,7 +30,7 @@ def register_de_space(name, field, top=None, threshold=None, description=""):
     """Register a DE-derived gene subset selected from a field of the GT DEResult."""
 
     def space(X, ctx, pert):
-        values = _field(ctx.de(pert, "gt"), field)
+        values = _field(ctx.de(pert, ctx.cfg.truth), field)
         keep = np.argsort(-np.abs(values))[:top] if top is not None else np.where(threshold(values))[0]
         return to_dense(X[:, keep])
 

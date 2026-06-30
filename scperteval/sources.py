@@ -15,10 +15,22 @@ from .registry import Registry
 SOURCES = Registry("source")
 
 
-@SOURCES.register("gt", provides="cells",
-                  description="ground truth — the first half of a perturbation's cells")
-def src_gt(ctx, pert):
+@SOURCES.register("gt_half", provides="cells",
+                  description="ground truth — the first half of a perturbation's cells (calibration truth)")
+def src_gt_half(ctx, pert):
     return ctx.ds.cells(pert, half="first")
+
+
+@SOURCES.register("gt_all_cells", provides="cells",
+                  description="ground truth — all of a perturbation's real cells (prediction-scoring truth)")
+def src_gt_all_cells(ctx, pert):
+    return ctx.ds.cells(pert)
+
+
+@SOURCES.register("prediction", provides="cells",
+                  description="model-predicted cells for the perturbation, from the --predictions h5ad")
+def src_prediction(ctx, pert):
+    return ctx.predictions.cells(pert)
 
 
 @SOURCES.register("tech_dup", provides="cells",

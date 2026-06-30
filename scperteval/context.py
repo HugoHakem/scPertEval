@@ -24,6 +24,7 @@ class Context:
     def __init__(self, dataset: Dataset, cfg: RunConfig):
         self.ds = dataset
         self.cfg = cfg
+        self.predictions = None     # a PredictionSet in prediction-scoring mode, else None
         self._local = threading.local()
         # Reentrant: several lazy initialisers (e.g. _ensure_ref_sums, ref_projection)
         # call reference() while already holding this lock, which a plain Lock would
@@ -94,8 +95,8 @@ class Context:
         """GT -> truth labels (its DEResult); a candidate -> its |score| ranking.
         The negative candidate is tested against ``neg_reference`` (e.g. control)
         rather than ``reference`` (the all-perturbed sample), the hybrid DE setup."""
-        if source == "gt":
-            return self.de(pert, "gt", p.reference)
+        if source == self.cfg.truth:
+            return self.de(pert, self.cfg.truth, p.reference)
         reference = p.neg_reference if (source == p.negative and p.neg_reference) else p.reference
         return np.abs(self.de(pert, source, reference).score)
 
@@ -135,7 +136,7 @@ class Context:
     def wmse_weights(self, pert):
         """Mejia DEG weights: min-max normalised |effect size| of GT vs the reference."""
         if pert not in self._weights:
-            s = np.abs(self.de(pert, "gt", "all_perturbed").score)
+            s = np.abs(self.de(pert, self.cfg.truth, "all_perturbed").score)
             finite = np.isfinite(s)
             lo, hi = s[finite].min(), s[finite].max()
             w = (s - lo) / (hi - lo) if hi > lo else np.zeros_like(s)
