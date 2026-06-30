@@ -35,7 +35,7 @@ Then ``--de-method my_test`` routes every DE-dependent unit through it.
 def moments(X):
     r"""Per-gene mean, sample variance, and cell count for a cell matrix.
 
-    Sparse- and dense-aware; uses :math:`\\text{Var}(X) = E[X^2] - E[X]^2`
+    Sparse- and dense-aware; uses :math:`\text{Var}(X) = E[X^2] - E[X]^2`
     with Bessel's correction.
 
     Parameters

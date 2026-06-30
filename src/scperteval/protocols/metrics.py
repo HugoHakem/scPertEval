@@ -110,8 +110,8 @@ def pearson(gt, prediction, ctx):
 
     .. math::
 
-        r = \\frac{\\sum_g (gt_g - \\bar{gt})(pred_g - \\bar{pred})}{
-                  \\sqrt{\\sum_g (gt_g - \\bar{gt})^2 \\cdot \\sum_g (pred_g - \\bar{pred})^2}}
+        r = \frac{\sum_g (gt_g - \bar{gt})(pred_g - \bar{pred})}{
+                  \sqrt{\sum_g (gt_g - \bar{gt})^2 \cdot \sum_g (pred_g - \bar{pred})^2}}
 
     Parameters
     ----------
@@ -131,7 +131,7 @@ def mse(gt, prediction, ctx):
 
     .. math::
 
-        \\text{MSE} = \\frac{1}{G}\\sum_{g=1}^G (gt_g - pred_g)^2
+        \text{MSE} = \frac{1}{G}\sum_{g=1}^G (gt_g - pred_g)^2
 
     Parameters
     ----------
@@ -153,8 +153,8 @@ def weighted_mse(gt, prediction, ctx, exp=2.0):
 
     .. math::
 
-        \\text{wMSE} = \\sum_g w_g \\,(gt_g - pred_g)^2, \\quad
-        w_g \\propto |s_g|^{\\text{exp}} / \\sum_{g'} |s_{g'}|^{\\text{exp}}
+        \text{wMSE} = \sum_g w_g \,(gt_g - pred_g)^2, \quad
+        w_g \propto |s_g|^{\text{exp}} / \sum_{g'} |s_{g'}|^{\text{exp}}
 
     where :math:`s_g` is the ground-truth DE t-statistic for gene :math:`g`.
 
@@ -181,8 +181,8 @@ def energy_distance(gt, prediction, ctx):
 
     .. math::
 
-        E(X, Y) = 2\\,\\mathbb{E}[\\|X - Y\\|]
-                  - \\mathbb{E}[\\|X - X'\\|] - \\mathbb{E}[\\|Y - Y'\\|]
+        E(X, Y) = 2\,\mathbb{E}[\|X - Y\|]
+                  - \mathbb{E}[\|X - X'\|] - \mathbb{E}[\|Y - Y'\|]
 
     Within-population terms use the unbiased (U-statistic) estimator.
 
@@ -212,12 +212,12 @@ def unbiased_mmd_median(gt, prediction, ctx):
 
     .. math::
 
-        \\widehat{\\text{MMD}}^2(X, Y)
-        = \\frac{1}{n(n-1)} \\sum_{i \\neq j} k(x_i, x_j)
-        + \\frac{1}{m(m-1)} \\sum_{i \\neq j} k(y_i, y_j)
-        - \\frac{2}{nm} \\sum_{i,j} k(x_i, y_j)
+        \widehat{\text{MMD}}^2(X, Y)
+        = \frac{1}{n(n-1)} \sum_{i \neq j} k(x_i, x_j)
+        + \frac{1}{m(m-1)} \sum_{i \neq j} k(y_i, y_j)
+        - \frac{2}{nm} \sum_{i,j} k(x_i, y_j)
 
-    with :math:`k(x,y) = \\exp(-\\|x-y\\|^2 / 2\\sigma^2)` and :math:`\\sigma` the median
+    with :math:`k(x,y) = \exp(-\|x-y\|^2 / 2\sigma^2)` and :math:`\sigma` the median
     pairwise Euclidean distance over the pooled sample.
 
     Parameters
@@ -259,10 +259,10 @@ def sinkhorn_w2(gt, prediction, ctx, blur=0.05):
 
     .. math::
 
-        W_2(X, Y) = \\sqrt{2\\,S_\\varepsilon(X, Y)}
+        W_2(X, Y) = \sqrt{2\,S_\varepsilon(X, Y)}
 
-    where :math:`S_\\varepsilon` is the debiased Sinkhorn divergence with blur
-    :math:`\\varepsilon`. Requires ``geomloss`` and ``torch``.
+    where :math:`S_\varepsilon` is the debiased Sinkhorn divergence with blur
+    :math:`\varepsilon`. Requires ``geomloss`` and ``torch``.
 
     Parameters
     ----------
@@ -304,8 +304,8 @@ def rank_retrieval(gt, prediction, ctx, transpose=False):
 
     .. math::
 
-        \\text{rank}(a) = \\frac{\\text{rank}_{\\text{col}}(D_{aa})}{n - 1}, \\quad
-        D_{ij} = \\|P_i - G_j\\|^2
+        \text{rank}(a) = \frac{\text{rank}_{\text{col}}(D_{aa})}{n - 1}, \quad
+        D_{ij} = \|P_i - G_j\|^2
 
     where :math:`P_i` and :math:`G_j` are the predicted and ground-truth centroids.
     ``transpose_rank`` transposes the matrix first (each prediction ranked among all GTs).
@@ -383,8 +383,8 @@ def de_overlap(gt, prediction, ctx, k=50):
 
     .. math::
 
-        \\text{Overlap}_k
-        = \\frac{|\\text{top-}k(|gt.score|) \\cap \\text{top-}k(pred)|}{k}
+        \text{Overlap}_k
+        = \frac{|\text{top-}k(|gt.score|) \cap \text{top-}k(pred)|}{k}
 
     Parameters
     ----------

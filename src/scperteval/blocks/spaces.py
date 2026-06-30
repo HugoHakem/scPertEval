@@ -45,7 +45,7 @@ def register_de_space(name, field, top=None, threshold=None, description=""):
 
 
 def top_space(k: int) -> str:
-    """top-k genes by |ground-truth effect size| (registered on demand)."""
+    """top-k genes by absolute ground-truth effect size (registered on demand)."""
     name = f"top_{k}"
     if name not in SPACES:
         register_de_space(

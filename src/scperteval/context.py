@@ -152,7 +152,7 @@ class Context:
         return source if source == "control" else (source, pert)
 
     def wmse_weights(self, pert):
-        """Mejia DEG weights: min-max normalised |effect size| of GT vs the reference."""
+        """Mejia DEG weights: min-max normalised absolute effect size of GT vs the reference."""
         if pert not in self._weights:
             s = np.abs(self.de(pert, self.cfg.truth, "all_perturbed").score)
             finite = np.isfinite(s)
