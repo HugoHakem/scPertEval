@@ -24,19 +24,30 @@ No gcloud account is needed — each file is also reachable over plain HTTPS at
 
 ## Run it
 
+The same protocol catalog backs three commands: **`calibrate`** (calibrate a protocol against
+built-in controls → DRF/BDS, see [Calibration](calibration.md)), **`score`** (score a model's
+predictions against ground truth, see [Scoring predictions](scoring.md)), and **`de`** (export
+per-gene differential expression).
+
+## Calibrate it
+
 ```bash
 # protocols by name — including parameterised ones (set k / padj per protocol)
-scperteval run data/wessels23.h5ad -p pearson_ctrl,unbiased_mmd_median_pca_k=20,de_overlap_k=10 --de-method t-test
+scperteval calibrate data/wessels23.h5ad -p pearson_ctrl,unbiased_mmd_median_pca_k=20,de_overlap_k=10 --de-method t-test
 
 # a parameterised protocol with no value uses its default (k=50, padj=0.05)
-scperteval run data/wessels23.h5ad -p unbiased_mmd_median_top_k --de-method MWU
+scperteval calibrate data/wessels23.h5ad -p unbiased_mmd_median_top_k --de-method MWU
 
 # a whole group, or everything (parameterised protocols use their defaults)
-scperteval run data/wessels23.h5ad -p distributional --de-method MWU
-scperteval run data/wessels23.h5ad -p all --de-method t-test
+scperteval calibrate data/wessels23.h5ad -p distributional --de-method MWU
+scperteval calibrate data/wessels23.h5ad -p all --de-method t-test
 
 # DRF calibration only (compute DRF only; exclude BDS)
-scperteval run data/wessels23.h5ad -p pearson_ctrl --de-method t-test --output drf
+scperteval calibrate data/wessels23.h5ad -p pearson_ctrl --de-method t-test --output drf
+
+# SCORE predictions against ground truth — predicted cells vs real cells, per protocol.
+# predictions.h5ad must have the same genes and perturbation labels as the dataset.
+scperteval score data/wessels23.h5ad predictions.h5ad -p pearson,mse,de_auprc --de-method t-test
 
 # DE only — writes per-gene statistic + adjusted p to HDF5 (no protocol calibration)
 # Provided as a convenience, since DE methods are tightly coupled with some evaluation protocols
@@ -46,20 +57,21 @@ scperteval de data/wessels23.h5ad --methods MWU
 scperteval list protocols        # also: de-methods | spaces | sources | calibrators
 ```
 
-Each run prints a summary table and writes a per-perturbation CSV
-`<dataset>__<timestamp>__drf.csv` (the raw control values and the calibrated score for
-every perturbation). `--profile` adds a per-protocol wall-clock timing CSV.
+Each command prints a summary table and writes a per-perturbation CSV named
+`<dataset>__<timestamp>__<output>.csv`: `calibrate` writes the raw control values and the
+calibrated DRF/BDS per perturbation (`…__drf.csv` / `…__bds.csv`); `score` writes the raw metric
+value per perturbation (`…__score.csv`). `--profile` adds a per-protocol wall-clock timing CSV.
 
 **DE backends** (`scperteval list de-methods`): `t-test` (default, Welch's, moment-based),
 `MWU` (Cliff's δ via illico), and `t-test_overestim_var` (scanpy's conservative-variance
 variant — the reference variance is scaled by the target's cell count). Select one with
-`--de-method` for a `run`, or list several with `--methods` for a `de` export. The overestim
-variant is a selectable backend for new protocols; no current protocol uses it.
+`--de-method` for a `calibrate`/`score`, or list several with `--methods` for a `de` export. The
+overestim variant is a selectable backend for new protocols; no current protocol uses it.
 
-<details><summary><code>scperteval run --help</code></summary>
+<details><summary><code>scperteval calibrate --help</code></summary>
 
 ```text
-usage: scperteval run [-h] [-p PROTOCOLS] [--de-method {MWU,t-test,t-test_overestim_var}]
+usage: scperteval calibrate [-h] [-p PROTOCOLS] [--de-method {MWU,t-test,t-test_overestim_var}]
                 [--subsample SUBSAMPLE] [--seed SEED] [--positive POSITIVE]
                 [--negative NEGATIVE] [--output {drf,bds}] [--out-dir OUT_DIR]
                 [--workers WORKERS] [--perturbation-key PERTURBATION_KEY]
@@ -81,6 +93,27 @@ usage: scperteval run [-h] [-p PROTOCOLS] [--de-method {MWU,t-test,t-test_overes
 
 </details>
 
+<details><summary><code>scperteval score --help</code></summary>
+
+```text
+usage: scperteval score [-h] [-p PROTOCOLS] [--de-method {MWU,t-test,t-test_overestim_var}]
+                [--subsample SUBSAMPLE] [--seed SEED] [--out-dir OUT_DIR] [--workers WORKERS]
+                [--perturbation-key PERTURBATION_KEY] [--control-label CONTROL_LABEL]
+                [--min-cells MIN_CELLS] [--profile] [--quiet]
+                dataset predictions
+
+  dataset               preprocessed .h5ad — the ground truth (real cells)
+  predictions           predicted .h5ad — same genes and perturbation labels as the dataset
+  -p, --protocols       comma-separated names, a group, or 'all'
+  --de-method           DE backend for the de_* protocols, the top_k/degs spaces, and WMSE weights
+  --subsample           cells in the all-perturbed reference (the ground truth is never subsampled)
+```
+
+Unlike `calibrate`, there are no `--positive`/`--negative`/`--output` options: the candidate is
+always your prediction and the output is always the raw `score`.
+
+</details>
+
 ## Use it from Python
 
 Install with `pip install scperteval` (or, from this repo,
@@ -90,7 +123,12 @@ The simplest path mirrors the CLI — call it via subprocess, exactly as the fig
 ```python
 import subprocess, sys
 
-subprocess.run([sys.executable, "-m", "scperteval", "run", "data/wessels23.h5ad",
+subprocess.run([sys.executable, "-m", "scperteval", "calibrate", "data/wessels23.h5ad",
                 "-p", "all", "--de-method", "t-test", "--out-dir", "results"], check=True)
 # -> results/wessels23__<timestamp>__drf.csv  (raw control values + calibrated DRF per perturbation)
+
+# score predictions against ground truth instead:
+subprocess.run([sys.executable, "-m", "scperteval", "score", "data/wessels23.h5ad",
+                "predictions.h5ad", "-p", "all", "--out-dir", "results"], check=True)
+# -> results/wessels23__<timestamp>__score.csv  (raw metric value per perturbation)
 ```
