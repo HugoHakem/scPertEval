@@ -2,7 +2,6 @@
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
 import shutil
-import subprocess
 import sys
 from datetime import datetime
 from importlib.metadata import metadata
@@ -12,19 +11,6 @@ from sphinxcontrib import katex
 
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE / "extensions"))
-
-# -- Fetch notebooks from companion tutorials repository ----------------------
-
-_TUTORIALS_REPO = "https://github.com/Virtual-Cell-Research-Community/scPertEval-tutorials"
-_NOTEBOOKS_DIR = HERE / "notebooks"
-
-if _NOTEBOOKS_DIR.exists() and (_NOTEBOOKS_DIR / ".git").exists():
-    subprocess.run(["git", "-C", str(_NOTEBOOKS_DIR), "pull", "--ff-only"], check=False)
-else:
-    subprocess.run(
-        ["git", "clone", "--depth=1", _TUTORIALS_REPO, str(_NOTEBOOKS_DIR)],
-        check=True,
-    )
 
 # -- Project information -----------------------------------------------------
 
@@ -133,6 +119,8 @@ katex_prerender = shutil.which(katex.NODEJS_BINARY) is not None
 
 nitpick_ignore = [ # type: ignore
     # Add exceptions here for links outside your control that fail to resolve
-    #     ("py:class", "igraph.Graph"),
-    ("py:class", "Context"),  # internal runtime class, not part of the public API
+    ("py:class", "Context"),
+    ("py:class", "Dataset"),
+    # Internal classes referenced in type hints but not given their own API page.
+    ("py:class", "scperteval.reference.Reference"),
 ]

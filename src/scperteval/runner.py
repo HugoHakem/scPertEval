@@ -13,13 +13,20 @@ from .types import Calibrator, Protocol
 
 
 def n_workers(cfg) -> int:
+    """Resolve the worker-thread count (``0`` = auto: CPU count minus 2, capped at 16)."""
     return cfg.workers if cfg.workers > 0 else max(1, min(16, (os.cpu_count() or 2) - 2))
 
 
-def resolve_controls(p: Protocol, cfg) -> dict:
+def resolve_roles(p: Protocol, cfg) -> dict:
+    """Map each candidate calibrator role to a source name.
+
+    ``positive`` / ``negative`` come from the protocol (or a CLI override); ``prediction``
+    is always the model-prediction source (used by the ``score`` calibrator).
+    """
     return {
         "positive": cfg.positive if cfg.positive != "auto" else p.positive,
         "negative": cfg.negative if cfg.negative != "auto" else p.negative,
+        "prediction": "prediction",
     }
 
 
@@ -48,7 +55,7 @@ def run_protocol(p: Protocol, ctx, calibrator: Calibrator):
     seconds : float
         Wall-clock time for this protocol.
     """
-    roles = resolve_controls(p, ctx.cfg)
+    roles = resolve_roles(p, ctx.cfg)
     needed = {role: roles[role] for role in calibrator.requires}
     _check_sources(p, needed)
     run = _run_dataset if p.scope == "dataset" else _run_per_perturbation
@@ -75,7 +82,7 @@ def _run_per_perturbation(p: Protocol, ctx, calibrator: Calibrator, needed: dict
 
     def work(pert):
         ctx.current_pert = pert
-        gt = ctx.view(pert, "gt", p)
+        gt = ctx.view(pert, ctx.cfg.truth, p)
         return {role: p.metric(gt, ctx.view(pert, src, p), ctx) for role, src in needed.items()}
 
     perts = ctx.perturbations
@@ -88,11 +95,11 @@ def _run_per_perturbation(p: Protocol, ctx, calibrator: Calibrator, needed: dict
 
 
 def _run_dataset(p: Protocol, ctx, calibrator: Calibrator, needed: dict):
-    """Dataset-scope protocols: build every perturbation's gt and control datapoints, hand
-    the metric the full lists at once, then read off each perturbation's score.
+    """Score dataset-scope protocols by handing the metric all perturbations at once.
 
-    Perturbations are treated as a single group (these datasets are single-covariate);
-    drf instead ranks within each covariate group.
+    Build every perturbation's gt and control datapoints, call the metric once on the full
+    lists, then read off each perturbation's score. Perturbations are treated as a single
+    group (these datasets are single-covariate); drf instead ranks within each covariate group.
     """
     perts = ctx.perturbations
 
@@ -104,7 +111,7 @@ def _run_dataset(p: Protocol, ctx, calibrator: Calibrator, needed: dict):
         return out
 
     start = perf_counter()
-    gt = collect("gt")
+    gt = collect(ctx.cfg.truth)
     scores = {role: p.metric(gt, collect(src), ctx) for role, src in needed.items()}
     seconds = perf_counter() - start
 
@@ -114,15 +121,17 @@ def _run_dataset(p: Protocol, ctx, calibrator: Calibrator, needed: dict):
 
 
 def compute_de_export(ctx, methods):
-    """{method: (statistic, pvalue_adj)} matrices (perturbations x genes) for each
-    method's GT(first-half)-vs-all-perturbed differential expression.
+    """Per-gene DE matrices for each method, for export.
+
+    Returns ``{method: (statistic, pvalue_adj)}`` matrices (perturbations x genes) for each
+    method's ground-truth-vs-all-perturbed differential expression.
     """
     out = {}
     for method in methods:
         ctx.cfg.de_method = method
 
         def work(pert):
-            de = ctx.de(pert, "gt", "all_perturbed")
+            de = ctx.de(pert, ctx.cfg.truth, "all_perturbed")
             return de.score, de.pvalue_adj
 
         with ThreadPoolExecutor(max_workers=n_workers(ctx.cfg)) as pool:

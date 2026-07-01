@@ -18,7 +18,6 @@ from __future__ import annotations
 import numpy as np
 from sklearn.metrics import average_precision_score, roc_auc_score
 
-
 # --- shared parameter blocks, substituted into docstrings at decoration time ---
 
 _CENTROID = """\
@@ -69,18 +68,20 @@ def _doc(**subs):
     This decorator detects the column position of each placeholder and re-indents all
     continuation lines to match, so the substituted text stays inside the RST section.
     """
+
     def deco(fn):
         doc = fn.__doc__
         for key, value in subs.items():
             placeholder = f"%({key})s"
             while placeholder in doc:
                 idx = doc.index(placeholder)
-                line_start = doc.rfind('\n', 0, idx) + 1
-                indent = ' ' * (idx - line_start)
-                indented = ('\n' + indent).join(value.split('\n'))
-                doc = doc[:idx] + indented + doc[idx + len(placeholder):]
+                line_start = doc.rfind("\n", 0, idx) + 1
+                indent = " " * (idx - line_start)
+                indented = ("\n" + indent).join(value.split("\n"))
+                doc = doc[:idx] + indented + doc[idx + len(placeholder) :]
         fn.__doc__ = doc
         return fn
+
     return deco
 
 
@@ -105,12 +106,12 @@ def _within_unbiased(sq, n):
 
 @_doc(params=_CENTROID)
 def pearson(gt, prediction, ctx):
-    """Pearson correlation between pseudobulk profiles.
+    r"""Pearson correlation between pseudobulk profiles.
 
     .. math::
 
-        r = \\frac{\\sum_g (gt_g - \\bar{gt})(pred_g - \\bar{pred})}{
-                  \\sqrt{\\sum_g (gt_g - \\bar{gt})^2 \\cdot \\sum_g (pred_g - \\bar{pred})^2}}
+        r = \frac{\sum_g (gt_g - \bar{gt})(pred_g - \bar{pred})}{
+                  \sqrt{\sum_g (gt_g - \bar{gt})^2 \cdot \sum_g (pred_g - \bar{pred})^2}}
 
     Parameters
     ----------
@@ -126,11 +127,11 @@ def pearson(gt, prediction, ctx):
 
 @_doc(params=_CENTROID)
 def mse(gt, prediction, ctx):
-    """Mean squared error between pseudobulk profiles.
+    r"""Mean squared error between pseudobulk profiles.
 
     .. math::
 
-        \\text{MSE} = \\frac{1}{G}\\sum_{g=1}^G (gt_g - pred_g)^2
+        \text{MSE} = \frac{1}{G}\sum_{g=1}^G (gt_g - pred_g)^2
 
     Parameters
     ----------
@@ -146,14 +147,14 @@ def mse(gt, prediction, ctx):
 
 @_doc(params=_CENTROID_W)
 def weighted_mse(gt, prediction, ctx, exp=2.0):
-    """MSE weighted by ground-truth effect size raised to ``exp``.
+    r"""MSE weighted by ground-truth effect size raised to ``exp``.
 
     Weights are min-max normalised per-gene; high-effect genes contribute more.
 
     .. math::
 
-        \\text{wMSE} = \\sum_g w_g \\,(gt_g - pred_g)^2, \\quad
-        w_g \\propto |s_g|^{\\text{exp}} / \\sum_{g'} |s_{g'}|^{\\text{exp}}
+        \text{wMSE} = \sum_g w_g \,(gt_g - pred_g)^2, \quad
+        w_g \propto |s_g|^{\text{exp}} / \sum_{g'} |s_{g'}|^{\text{exp}}
 
     where :math:`s_g` is the ground-truth DE t-statistic for gene :math:`g`.
 
@@ -176,12 +177,12 @@ def weighted_mse(gt, prediction, ctx, exp=2.0):
 
 @_doc(params=_POPULATION)
 def energy_distance(gt, prediction, ctx):
-    """Székely–Rizzo energy distance with bias-corrected within-population terms.
+    r"""Székely–Rizzo energy distance with bias-corrected within-population terms.
 
     .. math::
 
-        E(X, Y) = 2\\,\\mathbb{E}[\\|X - Y\\|]
-                  - \\mathbb{E}[\\|X - X'\\|] - \\mathbb{E}[\\|Y - Y'\\|]
+        E(X, Y) = 2\,\mathbb{E}[\|X - Y\|]
+                  - \mathbb{E}[\|X - X'\|] - \mathbb{E}[\|Y - Y'\|]
 
     Within-population terms use the unbiased (U-statistic) estimator.
 
@@ -207,16 +208,16 @@ def energy_distance(gt, prediction, ctx):
 
 @_doc(params=_POPULATION)
 def unbiased_mmd_median(gt, prediction, ctx):
-    """Unbiased RBF-MMD² with median-heuristic bandwidth (Gretton 2012).
+    r"""Unbiased RBF-MMD² with median-heuristic bandwidth (Gretton 2012).
 
     .. math::
 
-        \\widehat{\\text{MMD}}^2(X, Y)
-        = \\frac{1}{n(n-1)} \\sum_{i \\neq j} k(x_i, x_j)
-        + \\frac{1}{m(m-1)} \\sum_{i \\neq j} k(y_i, y_j)
-        - \\frac{2}{nm} \\sum_{i,j} k(x_i, y_j)
+        \widehat{\text{MMD}}^2(X, Y)
+        = \frac{1}{n(n-1)} \sum_{i \neq j} k(x_i, x_j)
+        + \frac{1}{m(m-1)} \sum_{i \neq j} k(y_i, y_j)
+        - \frac{2}{nm} \sum_{i,j} k(x_i, y_j)
 
-    with :math:`k(x,y) = \\exp(-\\|x-y\\|^2 / 2\\sigma^2)` and :math:`\\sigma` the median
+    with :math:`k(x,y) = \exp(-\|x-y\|^2 / 2\sigma^2)` and :math:`\sigma` the median
     pairwise Euclidean distance over the pooled sample.
 
     Parameters
@@ -254,14 +255,14 @@ _geomloss_cache: dict = {}
 
 @_doc(params=_POPULATION)
 def sinkhorn_w2(gt, prediction, ctx, blur=0.05):
-    """Debiased Sinkhorn 2-Wasserstein distance (geomloss, p=2).
+    r"""Debiased Sinkhorn 2-Wasserstein distance (geomloss, p=2).
 
     .. math::
 
-        W_2(X, Y) = \\sqrt{2\\,S_\\varepsilon(X, Y)}
+        W_2(X, Y) = \sqrt{2\,S_\varepsilon(X, Y)}
 
-    where :math:`S_\\varepsilon` is the debiased Sinkhorn divergence with blur
-    :math:`\\varepsilon`. Requires ``geomloss`` and ``torch``.
+    where :math:`S_\varepsilon` is the debiased Sinkhorn divergence with blur
+    :math:`\varepsilon`. Requires ``geomloss`` and ``torch``.
 
     Parameters
     ----------
@@ -296,15 +297,15 @@ def sinkhorn_w2(gt, prediction, ctx, blur=0.05):
 
 @_doc(params=_DATASET)
 def rank_retrieval(gt, prediction, ctx, transpose=False):
-    """Cross-perturbation retrieval rank — dataset-scope metric, lower is better.
+    r"""Cross-perturbation retrieval rank — dataset-scope metric, lower is better.
 
     Builds the ``(n x n)`` squared-distance matrix between all predicted and ground-truth
     centroids, then reads off the diagonal rank (column-wise by default).
 
     .. math::
 
-        \\text{rank}(a) = \\frac{\\text{rank}_{\\text{col}}(D_{aa})}{n - 1}, \\quad
-        D_{ij} = \\|P_i - G_j\\|^2
+        \text{rank}(a) = \frac{\text{rank}_{\text{col}}(D_{aa})}{n - 1}, \quad
+        D_{ij} = \|P_i - G_j\|^2
 
     where :math:`P_i` and :math:`G_j` are the predicted and ground-truth centroids.
     ``transpose_rank`` transposes the matrix first (each prediction ranked among all GTs).
@@ -378,12 +379,12 @@ def de_auroc(gt, prediction, ctx):
 
 @_doc(params=_DE)
 def de_overlap(gt, prediction, ctx, k=50):
-    """Top-k overlap between ground-truth and predicted DE gene rankings.
+    r"""Top-k overlap between ground-truth and predicted DE gene rankings.
 
     .. math::
 
-        \\text{Overlap}_k
-        = \\frac{|\\text{top-}k(|gt.score|) \\cap \\text{top-}k(pred)|}{k}
+        \text{Overlap}_k
+        = \frac{|\text{top-}k(|gt.score|) \cap \text{top-}k(pred)|}{k}
 
     Parameters
     ----------

@@ -10,6 +10,7 @@ class ProtocolTableDirective(Directive):
     """Emit a table of all protocols from ``scperteval.protocols.TABLE``."""
 
     def run(self):
+        """Build and return the protocol reference table node."""
         from scperteval.protocols import TABLE
 
         table = nodes.table()
@@ -54,5 +55,6 @@ class ProtocolTableDirective(Directive):
 
 
 def setup(app: Sphinx):
+    """Register the ``protocol-table`` directive with Sphinx."""
     app.add_directive("protocol-table", ProtocolTableDirective)
     return {"version": "0.1", "parallel_read_safe": True}

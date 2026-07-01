@@ -12,17 +12,21 @@ protocols across the field and ultimately choose the right approach for a given 
 problem space.
 
 scPertEval renders each protocol as a short, readable building block to run, read, reuse,
-and contribute back — a place for collaboration and alignment in the field. Run the tool by
-specifying a dataset, one or more protocols, and a method of differential expression; the
-tool outputs calibration data: the **Dynamic Range Fraction (DRF)** and the **Bound
-Discrimination Score (BDS)** — quantifying how well the protocol separates real perturbation
-signal from an uninformative baseline (see [Calibration](user-guide/calibration.md)).
+and contribute back — a place for collaboration and alignment in the field. The same catalog
+of protocols backs three commands:
+
+- **`score`** — score a model's predictions against ground truth, one metric value per
+  perturbation (see [Scoring predictions](user-guide/scoring.md)).
+- **`calibrate`** — calibrate a protocol against built-in positive/negative controls, reporting
+  the **Dynamic Range Fraction (DRF)** and **Bound Discrimination Score (BDS)** — how well it
+  separates real signal from an uninformative baseline (see [Calibration](user-guide/calibration.md)).
+- **`de`** — export per-gene differential expression to HDF5.
 
 ## Quick start
 
 ```bash
 pip install scperteval
-scperteval run data/wessels23.h5ad -p all --de-method t-test
+scperteval calibrate data/wessels23.h5ad -p all --de-method t-test
 ```
 
 ::::{grid} 1 2 3 3

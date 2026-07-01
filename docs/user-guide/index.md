@@ -1,10 +1,16 @@
 # User guide
 
-Start with [Calibration](calibration) to understand what scPertEval measures before diving into usage.
+scPertEval runs in two modes:
+
+- [Scoring predictions](scoring) compares a model's output to ground truth
+- [Calibration](calibration) measures whether a protocol can tell real signal from an uninformative baseline
+
+Start with whichever matches your goal, then see [Usage](usage).
 
 ```{toctree}
 :maxdepth: 1
 
+scoring
 calibration
 usage
 protocols

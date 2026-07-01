@@ -29,6 +29,12 @@ class RunConfig:
         Override the positive control source; ``"auto"`` defers to the protocol.
     negative : str
         Override the negative control source; ``"auto"`` defers to the protocol.
+    truth : str
+        Label of the ground-truth condition used for DE (the perturbation key whose
+        cells serve as the ground-truth target; default ``"gt_half"``).
+    predictions : str or None
+        Path to a model-predictions ``.h5ad`` for prediction-scoring mode;
+        ``None`` selects calibration mode (default).
     output : str
         Calibrator to apply — ``"drf"`` or ``"bds"`` (default ``"drf"``).
     out_dir : str
@@ -52,6 +58,8 @@ class RunConfig:
     seed: int = 42
     positive: str = "auto"
     negative: str = "auto"
+    truth: str = "gt_half"
+    predictions: str | None = None
     output: str = "drf"
     out_dir: str = "results"
     workers: int = 0
@@ -85,10 +93,10 @@ class DEResult:
 
 @dataclass(frozen=True)
 class Param:
-    """A protocol's tunable knob — how a CLI value is cast, defaulted, and applied.
+    """A protocol's tunable knob: how a CLI value is cast, defaulted, and applied.
 
-    ``space`` maps the value to a feature-space name; when it is ``None`` the value is
-    passed straight to the metric as a keyword argument.
+    ``space`` maps the value (``k=30``, ``padj=0.05``) to a feature-space name; when it is
+    ``None`` the value is passed straight to the metric as a keyword argument.
 
     Attributes
     ----------
@@ -132,9 +140,16 @@ class Protocol:
 
     - ``better`` — which direction is an improvement, ``"higher"`` or ``"lower"``.
       Correlations and overlaps improve as they go up (``"higher"``); errors and
-      distances improve as they go down (``"lower"``).
+      distances improve as they go down (``"lower"``). This is the metric's *sense*,
+      and it is not implied by ``perfect`` — e.g. perplexity has ``perfect=1.0`` yet
+      ``better="lower"``, and a log-likelihood has ``perfect=0.0`` yet ``better="higher"``.
     - ``perfect`` — the value a flawless prediction attains (1.0 for a correlation,
       0.0 for an error). It anchors the top of the DRF scale.
+
+    Together they let the calibrator orient the score: DRF measures how far the positive
+    control moves from the negative-control floor toward ``perfect`` in the ``better``
+    direction, and BDS counts the perturbations where the positive control is ``better``
+    than the negative.
 
     Attributes
     ----------
@@ -185,11 +200,12 @@ class Protocol:
 
     @property
     def parameterised(self) -> bool:
+        """Whether this protocol takes a CLI-supplied parameter."""
         return self.param is not None
 
     def resolve(self, value) -> Protocol:
         """Concrete protocol for a tunable one at ``value`` (sets the space or metric arg)."""
-        assert self.param is not None
+        assert self.param is not None  # resolve() is only called on parameterised protocols
         suffix = f"{value:g}" if isinstance(value, float) else str(value)
         name = f"{self.name}={suffix}"
         if self.param.space is not None:

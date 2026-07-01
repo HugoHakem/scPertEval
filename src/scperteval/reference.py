@@ -8,8 +8,7 @@ import numpy as np
 
 
 class Reference:
-    """A comparison sample of cells (the all-perturbed subsample, or non-targeting
-    control), served leave-one-out.
+    """A fixed cell sample (all-perturbed subsample or control), served leave-one-out.
 
     ``subset(P)`` returns the sample with perturbation ``P``'s own cells removed, so
     a perturbation is never scored against a reference that contains itself. When
@@ -34,6 +33,7 @@ class Reference:
         return mask
 
     def subset(self, exclude):
+        """Return the sample with ``exclude``'s own cells removed (leave-one-out)."""
         mask = self.keep(exclude)
         return self.cells if mask is None else self.cells[mask]
 

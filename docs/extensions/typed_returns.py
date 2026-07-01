@@ -5,7 +5,7 @@ import re
 from collections.abc import Generator, Iterable
 
 from sphinx.application import Sphinx
-from sphinx.ext.napoleon import NumpyDocstring # type: ignore
+from sphinx.ext.napoleon import NumpyDocstring  # type: ignore
 
 
 def _process_return(lines: Iterable[str]) -> Generator[str, None, None]:
@@ -28,4 +28,4 @@ def _parse_returns_section(self: NumpyDocstring, section: str) -> list[str]:
 
 def setup(app: Sphinx):
     """Set app."""
-    NumpyDocstring._parse_returns_section = _parse_returns_section # type: ignore
+    NumpyDocstring._parse_returns_section = _parse_returns_section  # type: ignore

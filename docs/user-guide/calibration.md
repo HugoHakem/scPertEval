@@ -68,3 +68,22 @@ $s_{\text{pos}}^{(a)} < s_{\text{neg}}^{(a)}$? DRF checks the **magnitude** — 
 the full dynamic range is that gap? A protocol can have high BDS (ordering consistently
 correct) yet low DRF (margin negligible relative to what is achievable). Use both together:
 BDS as a pass/fail gate on directionality, DRF as a quantitative measure of signal recovery.
+
+## In practice
+
+```bash
+scperteval calibrate data/wessels23.h5ad -p pearson_ctrl,unbiased_mmd_median_pca_k=20,de_overlap_k=10 --de-method t-test
+```
+
+<!-- TODO: replace with real output from wessels23.h5ad -->
+| protocol | DRF (mean) | BDS |
+|---|---|---|
+| `pearson_ctrl` | … | … |
+| `unbiased_mmd_median_pca_k=20` | … | … |
+| `de_overlap_k=10` | … | … |
+
+A protocol with BDS < 0.5 cannot reliably order its controls — its scores should not be trusted
+regardless of magnitude. A protocol with high BDS but low DRF is directionally correct but
+recovers little of the available signal range.
+
+→ See [Usage](usage.md) for the full CLI reference, all options, and `--help` output.

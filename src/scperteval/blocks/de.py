@@ -33,9 +33,9 @@ Then ``--de-method my_test`` routes every DE-dependent unit through it.
 
 
 def moments(X):
-    """Per-gene mean, sample variance, and cell count for a cell matrix.
+    r"""Per-gene mean, sample variance, and cell count for a cell matrix.
 
-    Sparse- and dense-aware; uses :math:`\\text{Var}(X) = E[X^2] - E[X]^2`
+    Sparse- and dense-aware; uses :math:`\text{Var}(X) = E[X^2] - E[X]^2`
     with Bessel's correction.
 
     Parameters
@@ -138,10 +138,10 @@ def de_ttest(target, reference) -> DEResult:
 @DE_METHODS.register(
     "t-test_overestim_var",
     description="scanpy's conservative t-test variant; reference variance scaled by the "
-                "target's cell count (selectable backend; not used by any current protocol)",
+    "target's cell count (selectable backend; not used by any current protocol)",
 )
 def de_ttest_overestim(target, reference) -> DEResult:
-    """scanpy ``rank_genes_groups(method='t-test_overestim_var')``.
+    """Scanpy ``rank_genes_groups(method='t-test_overestim_var')``.
 
     Identical to Welch's t-test except the reference group's cell count is replaced by the
     target's, which inflates the reference standard-error term ("overestimating" its variance

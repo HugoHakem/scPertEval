@@ -16,9 +16,34 @@ from .registry import Registry
 SOURCES = Registry("source")
 
 
-@SOURCES.register("gt", provides="cells", description="ground truth — the first half of a perturbation's cells")
-def src_gt(ctx, pert):
+@SOURCES.register(
+    "gt_half",
+    provides="cells",
+    description="ground truth — the first half of a perturbation's cells (calibration truth)",
+)
+def src_gt_half(ctx, pert):
+    """Ground-truth cells: the first half of the perturbation's cells."""
     return ctx.ds.cells(pert, half="first")
+
+
+@SOURCES.register(
+    "gt_all_cells",
+    provides="cells",
+    description="ground truth — all of a perturbation's real cells (prediction-scoring truth)",
+)
+def src_gt_all_cells(ctx, pert):
+    """Ground-truth cells: all of the perturbation's real cells."""
+    return ctx.ds.cells(pert)
+
+
+@SOURCES.register(
+    "prediction",
+    provides="cells",
+    description="model-predicted cells for the perturbation, from the --predictions h5ad",
+)
+def src_prediction(ctx, pert):
+    """Model-predicted cells for the perturbation, gene-aligned to the dataset."""
+    return ctx.predictions.cells(pert)
 
 
 @SOURCES.register(
@@ -27,11 +52,13 @@ def src_gt(ctx, pert):
     description="technical duplicate — the held-out second half (single-cell positive control)",
 )
 def src_tech_dup(ctx, pert):
+    """Technical-duplicate cells: the perturbation's held-out second half."""
     return ctx.ds.cells(pert, half="second")
 
 
 @SOURCES.register("control", provides="cells", description="non-targeting control cells")
 def src_control(ctx, pert):
+    """Non-targeting control cells (subsampled)."""
     return ctx.ds.control_cells(ctx.cfg.subsample)
 
 
@@ -41,6 +68,7 @@ def src_control(ctx, pert):
     description="all-perturbed reference sample, leave-one-out (single-cell negative control)",
 )
 def src_all_perturbed(ctx, pert):
+    """All-perturbed reference cells, with the target perturbation removed."""
     return ctx.reference().subset(pert)
 
 
@@ -51,6 +79,7 @@ def src_all_perturbed(ctx, pert):
     "(pseudobulk sibling of all_perturbed; pseudobulk negative control)",
 )
 def src_all_perturbed_mean(ctx, pert):
+    """All-perturbed pseudobulk mean, excluding the target perturbation."""
     return ctx.ds.allpert_mean_except(pert)
 
 
@@ -60,6 +89,7 @@ def src_all_perturbed_mean(ctx, pert):
     description="mean of all perturbations — shared baseline for the ranking protocols",
 )
 def src_global_mean(ctx, pert):
+    """Pseudobulk mean over all perturbations (no target exclusion)."""
     return ctx.ds.allpert_mean()
 
 
@@ -70,7 +100,9 @@ def src_global_mean(ctx, pert):
     "the dataset mean (pseudobulk positive control)",
 )
 def src_interpolated(ctx, pert):
-    """Alpha = 1 - adjusted p per gene (from the run's DE method, vs control); blend toward
+    """DE-weighted blend toward the held-out replicate, else the all-perturbed mean.
+
+    Alpha = 1 - adjusted p per gene (from the run's DE method, vs control); blend toward
     the held-out replicate where the gene is significant, else toward the all-perturbed mean.
     """
     tech = np.asarray(to_dense(ctx.ds.cells(pert, half="second"))).mean(0)

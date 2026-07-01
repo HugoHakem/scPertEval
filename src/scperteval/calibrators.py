@@ -1,6 +1,7 @@
-"""Calibrators turn the raw metric values measured on each control into a final
-per-metric score. Each declares the control roles it needs, a per-perturbation
-combine, and a cross-perturbation aggregate.
+"""Calibrators turn raw control metric values into a final per-metric score.
+
+Each declares the control roles it needs, a per-perturbation combine, and a
+cross-perturbation aggregate.
 """
 
 from __future__ import annotations
@@ -42,5 +43,12 @@ CALIBRATORS = {
         _bds_per_pert,
         lambda v: {"bds": float(np.nanmean(v))},
         description="Bound Discrimination Score — fraction of perturbations the positive control wins (SBB 2026)",
+    ),
+    "score": Calibrator(
+        "score",
+        ("prediction",),
+        lambda raws, p: raws["prediction"],
+        lambda v: {"mean": float(np.nanmean(v)), "median": float(np.nanmedian(v))},
+        description="raw metric of a prediction vs ground truth — mean/median over perturbations (prediction-scoring mode)",
     ),
 }

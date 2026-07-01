@@ -70,7 +70,7 @@
    :no-members:
 ```
 
-`scperteval.calibrators.CALIBRATORS` — `{name: Calibrator}` dict of built-in calibrators (`drf`, `bds`).
+`scperteval.calibrators.CALIBRATORS` — `{name: Calibrator}` dict of built-in calibrators (`drf`, `bds`, and `score` for the prediction-scoring mode).
 Add entries here to register a new calibrator; see [Add a calibrator](user-guide/building-blocks.md#add-a-calibrator).
 
 ## Building blocks
@@ -126,6 +126,21 @@ Add entries here to register a new calibrator; see [Add a calibrator](user-guide
 
 `scperteval.sources.SOURCES` — registry of all control/reference sources.
 Add entries here to register a new source; see [Add a control source](user-guide/building-blocks.md#add-a-control-source).
+
+### Predictions
+
+```{eval-rst}
+.. module:: scperteval.predictions
+.. currentmodule:: scperteval.predictions
+
+.. autosummary::
+    :toctree: generated
+
+    PredictionSet
+```
+
+`scperteval.predictions.PredictionSet` — model-predicted cells loaded from a `.h5ad` and
+gene-aligned to the dataset, used by the `score` command.
 
 ## Context
 

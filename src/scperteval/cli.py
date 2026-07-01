@@ -11,6 +11,7 @@ from .blocks.spaces import SPACES
 from .calibrators import CALIBRATORS
 from .context import Context
 from .dataset import Dataset
+from .predictions import PredictionSet
 from .protocols.table import GROUPS, PROTOCOLS, TABLE
 from .runner import compute_de_export, run_protocol
 from .sources import SOURCES
@@ -40,6 +41,7 @@ def _resolve_token(token: str) -> list[Protocol]:
 
 
 def resolve_protocols(specs: list[str]) -> list[Protocol]:
+    """Resolve CLI protocol specs to a de-duplicated list of concrete protocols."""
     out: list[Protocol] = []
     for spec in specs:
         for token in spec.split(","):
@@ -52,7 +54,31 @@ def resolve_protocols(specs: list[str]) -> list[Protocol]:
     return list(by_name.values())
 
 
-def cmd_run(args) -> None:
+def _evaluate(cfg: RunConfig, protocols, ctx, quiet: bool) -> None:
+    """Run every protocol over the dataset, print the summary, and write the CSV.
+
+    Shared by ``calibrate`` and ``score`` (prediction vs ground truth); they differ only in
+    how ``ctx`` is built and which calibrator ``cfg.output`` selects.
+    """
+    calibrator = CALIBRATORS[cfg.output]
+    ctx.warm(protocols)
+    aggregates, rows, timed = {}, [], []
+    for p in protocols:
+        agg, proto_rows, seconds = run_protocol(p, ctx, calibrator)
+        aggregates[p.name] = agg
+        rows += proto_rows
+        timed.append((p, seconds))
+    if not quiet:
+        io.print_summary(cfg, aggregates, calibrator, protocols)
+    stamp = datetime.now().strftime("%Y-%m-%dT%H%M%S")
+    path = io.write_rows(cfg, rows, stamp)
+    print(f"-> {path}")
+    if cfg.profile:
+        print(f"-> {io.write_timing(cfg, timed, stamp)}")
+
+
+def cmd_calibrate(args) -> None:
+    """Run the ``calibrate`` command: score protocols against built-in controls (DRF/BDS)."""
     protocols = resolve_protocols(args.protocols or ["all"])
     cfg = RunConfig(
         dataset=args.dataset,
@@ -70,25 +96,38 @@ def cmd_run(args) -> None:
         min_cells=args.min_cells,
         profile=args.profile,
     )
-    calibrator = CALIBRATORS[cfg.output]
     ctx = Context(Dataset.load(cfg.dataset, cfg), cfg)
-    ctx.warm(protocols)
-    aggregates, rows, timed = {}, [], []
-    for p in protocols:
-        agg, proto_rows, seconds = run_protocol(p, ctx, calibrator)
-        aggregates[p.name] = agg
-        rows += proto_rows
-        timed.append((p, seconds))
-    if not args.quiet:
-        io.print_summary(cfg, aggregates, calibrator, protocols)
-    stamp = datetime.now().strftime("%Y-%m-%dT%H%M%S")
-    path = io.write_rows(cfg, rows, stamp)
-    print(f"-> {path}")
-    if cfg.profile:
-        print(f"-> {io.write_timing(cfg, timed, stamp)}")
+    _evaluate(cfg, protocols, ctx, args.quiet)
+
+
+def cmd_score(args) -> None:
+    """Run the ``score`` command: score predictions against ground truth, per protocol."""
+    protocols = resolve_protocols(args.protocols or ["all"])
+    cfg = RunConfig(
+        dataset=args.dataset,
+        protocols=[p.name for p in protocols],
+        de_method=args.de_method,
+        subsample=args.subsample,
+        seed=args.seed,
+        output="score",
+        out_dir=args.out_dir,
+        workers=args.workers,
+        perturbation_key=args.perturbation_key,
+        control_label=args.control_label,
+        min_cells=args.min_cells,
+        profile=args.profile,
+        predictions=args.predictions,
+        truth="gt_all_cells",
+    )
+    assert cfg.predictions is not None  # required positional on the score subcommand
+    ds = Dataset.load(cfg.dataset, cfg)
+    ctx = Context(ds, cfg)
+    ctx.predictions = PredictionSet.load(cfg.predictions, ds, cfg)
+    _evaluate(cfg, protocols, ctx, args.quiet)
 
 
 def cmd_de(args) -> None:
+    """Run the ``de`` command: export per-gene differential expression to HDF5."""
     methods = [m.strip() for m in args.methods.split(",") if m.strip()]
     cfg = RunConfig(
         dataset=args.dataset,
@@ -111,6 +150,8 @@ def cmd_de(args) -> None:
 
 
 def cmd_list(args) -> None:
+    """Run the ``list`` command: print the available building blocks of one category."""
+
     def reg(registry, fmt):
         return [fmt(n, registry.meta(n)) for n in registry.names()]
 
@@ -136,38 +177,76 @@ def cmd_list(args) -> None:
 
 
 def main(argv=None) -> None:
+    """Parse arguments and dispatch to the selected subcommand."""
     parser = argparse.ArgumentParser(prog="scperteval", description=__doc__)
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    run = sub.add_parser("run", help="compute protocol calibration for one dataset")
-    run.add_argument("dataset", help="preprocessed .h5ad")
-    run.add_argument(
+    calibrate = sub.add_parser("calibrate", help="calibrate protocols against positive/negative controls (DRF/BDS)")
+    calibrate.add_argument("dataset", help="preprocessed .h5ad")
+    calibrate.add_argument(
         "-p",
         "--protocols",
         action="append",
         default=[],
         help="comma-separated names, a group (pseudobulk|distributional|de), or 'all'",
     )
-    run.add_argument(
+    calibrate.add_argument(
         "--de-method",
         choices=DE_METHODS.names(),
         default="t-test",
         help="DE backend for EVERY DE-dependent unit in the run: the interpolated "
         "positive control, the top_k/degs spaces, the de_* protocols, and the WMSE weights",
     )
-    run.add_argument("--subsample", type=int, default=8192)
-    run.add_argument("--seed", type=int, default=42)
-    run.add_argument("--positive", default="auto")
-    run.add_argument("--negative", default="auto")
-    run.add_argument("--output", choices=list(CALIBRATORS), default="drf")
-    run.add_argument("--out-dir", default="results")
-    run.add_argument("--workers", type=int, default=0, help="threads (0 = auto)")
-    run.add_argument("--perturbation-key", default="perturbation")
-    run.add_argument("--control-label", default="control")
-    run.add_argument("--min-cells", type=int, default=30, help="skip perturbations with fewer cells")
-    run.add_argument("--profile", action="store_true", help="also write a per-protocol wall-clock timing table")
-    run.add_argument("--quiet", action="store_true")
-    run.set_defaults(func=cmd_run)
+    calibrate.add_argument("--subsample", type=int, default=8192)
+    calibrate.add_argument("--seed", type=int, default=42)
+    calibrate.add_argument("--positive", default="auto")
+    calibrate.add_argument("--negative", default="auto")
+    calibrate.add_argument(
+        "--output",
+        default="drf",
+        choices=[n for n, c in CALIBRATORS.items() if "prediction" not in c.requires],
+        help="how per-perturbation values are calibrated (drf/bds)",
+    )
+    calibrate.add_argument("--out-dir", default="results")
+    calibrate.add_argument("--workers", type=int, default=0, help="threads (0 = auto)")
+    calibrate.add_argument("--perturbation-key", default="perturbation")
+    calibrate.add_argument("--control-label", default="control")
+    calibrate.add_argument("--min-cells", type=int, default=30, help="skip perturbations with fewer cells")
+    calibrate.add_argument("--profile", action="store_true", help="also write a per-protocol wall-clock timing table")
+    calibrate.add_argument("--quiet", action="store_true")
+    calibrate.set_defaults(func=cmd_calibrate)
+
+    score = sub.add_parser("score", help="score model predictions against ground truth (real cells), per protocol")
+    score.add_argument("dataset", help="preprocessed .h5ad — the ground truth (real cells)")
+    score.add_argument("predictions", help="predicted .h5ad — same genes and perturbation labels")
+    score.add_argument(
+        "-p",
+        "--protocols",
+        action="append",
+        default=[],
+        help="comma-separated names, a group (pseudobulk|distributional|de), or 'all'",
+    )
+    score.add_argument(
+        "--de-method",
+        choices=DE_METHODS.names(),
+        default="t-test",
+        help="DE backend for every DE-dependent unit (the top_k/degs spaces, the de_* protocols, and the WMSE weights)",
+    )
+    score.add_argument(
+        "--subsample",
+        type=int,
+        default=8192,
+        help="cells in the all-perturbed reference sample (the ground truth itself is never subsampled)",
+    )
+    score.add_argument("--seed", type=int, default=42)
+    score.add_argument("--out-dir", default="results")
+    score.add_argument("--workers", type=int, default=0, help="threads (0 = auto)")
+    score.add_argument("--perturbation-key", default="perturbation")
+    score.add_argument("--control-label", default="control")
+    score.add_argument("--min-cells", type=int, default=30, help="skip perturbations with fewer cells")
+    score.add_argument("--profile", action="store_true", help="also write a per-protocol wall-clock timing table")
+    score.add_argument("--quiet", action="store_true")
+    score.set_defaults(func=cmd_score)
 
     de = sub.add_parser("de", help="write per-gene DE (statistic + adj p) per method to HDF5")
     de.add_argument("dataset", help="preprocessed .h5ad")

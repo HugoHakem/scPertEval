@@ -34,6 +34,7 @@ Pass ``global_space=True`` if the transform does not depend on the perturbation
 
 @SPACES.register("full", global_space=True, description="all genes, no transform")
 def space_full(X, ctx, pert):
+    """Identity space: all genes, densified, no transform."""
     return to_dense(X)
 
 
@@ -68,11 +69,11 @@ def register_de_space(name, field, top=None, threshold=None, description=""):
     """
 
     def space(X, ctx, pert):
-        values = _field(ctx.de(pert, "gt"), field)
+        values = _field(ctx.de(pert, ctx.cfg.truth), field)
         if top is not None:
             keep = np.argsort(-np.abs(values))[:top]
         else:
-            assert threshold is not None, "either top or threshold must be provided"
+            assert threshold is not None  # register_de_space takes exactly one of top/threshold
             keep = np.where(threshold(values))[0]
         return to_dense(X[:, keep])
 
@@ -81,7 +82,7 @@ def register_de_space(name, field, top=None, threshold=None, description=""):
 
 
 def top_space(k: int) -> str:
-    r"""Return the name of the top-k-by-effect-size space, registering it on first call.
+    r"""top-k genes by absolute ground-truth effect size (registered on demand).
 
     Parameters
     ----------
@@ -102,7 +103,7 @@ def top_space(k: int) -> str:
 
 
 def degs_space(padj: float) -> str:
-    """Return the name of the ground-truth DEGs space at adjusted p < padj, registering on first call.
+    """ground-truth DEGs at adjusted p < padj (registered on demand).
 
     Parameters
     ----------
@@ -126,7 +127,7 @@ def degs_space(padj: float) -> str:
 
 
 def pca_space(k: int) -> str:
-    """Return the name of the top-k PCA space, registering it on first call.
+    """top-k principal components (registered on demand).
 
     PCA is fit once on (up to 50 000) cells from the full dataset, then applied
     to each cell population. The fitted transform is shared across perturbations.

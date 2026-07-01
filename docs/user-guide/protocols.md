@@ -5,8 +5,9 @@
 Two files define each protocol:
 
 - **[`src/scperteval/protocols/metrics.py`](https://github.com/Virtual-Cell-Research-Community/scPertEval/blob/main/src/scperteval/protocols/metrics.py)** — the metric, as a
-  pure function of the ground truth and a `prediction` (whichever control is being scored,
-  positive or negative). e.g. `mse`, `mmd`, `de_auprc`:
+  pure function of the ground truth and a `prediction` (the candidate being scored — a positive
+  or negative control under `calibrate`, or your model's output under `score`). e.g. `mse`,
+  `mmd`, `de_auprc`:
 
   ```python
   def mse(gt, prediction, ctx):
@@ -43,9 +44,10 @@ Here is a complete new protocol: mean absolute error on the standard pseudobulk 
    ```
 
    Every metric function has this signature. `gt` is one perturbation's ground-truth
-   profile; `prediction` is a control being compared against it (scPertEval calls the function
-   once for the positive control and once for the negative). `ctx` is the dataset context,
-   needed by only a few metrics — ignore it otherwise. Return a single number.
+   profile; `prediction` is the candidate being compared against it (under `calibrate`, scPertEval
+   calls the function once for the positive control and once for the negative; under `score`, once
+   with your model's prediction). `ctx` is the dataset context, needed by only a few metrics —
+   ignore it otherwise. Return a single number.
 
 2. Add a row to [`src/scperteval/protocols/table.py`](https://github.com/Virtual-Cell-Research-Community/scPertEval/blob/main/src/scperteval/protocols/table.py):
 
@@ -55,7 +57,7 @@ Here is a complete new protocol: mean absolute error on the standard pseudobulk 
             better="lower", perfect=0.0)
    ```
 
-Run it with `scperteval run data.h5ad -p mae`. That is the whole protocol: MAE between each
+Run it with `scperteval calibrate data.h5ad -p mae`. That is the whole protocol: MAE between each
 perturbation's pseudobulk profile and its positive and negative controls, scored as
 lower-is-better toward a perfect of 0.
 
@@ -82,7 +84,7 @@ That row is the spec; parameters include:
 |---|---|
 | `centroid` | a 1-D pseudobulk vector (one value per gene) |
 | `population` | a `(cells × genes)` matrix |
-| `de` | a `DEResult` (for `gt`) / per-gene `\|score\|` ranking (for a prediction) |
+| `de` | a `DEResult` (for the ground truth) / per-gene `\|score\|` ranking (for a prediction) |
 
 **`scope`** is the independent companion axis — *how many* perturbations the metric sees at once:
 
@@ -147,13 +149,18 @@ all_perturbed  (cells) — all-perturbed reference sample, leave-one-out (single
 all_perturbed_mean (centroid) — all-perturbed mean, excluding the target — leave-one-out (pseudobulk sibling of all_perturbed; pseudobulk negative control)
 control        (cells) — non-targeting control cells
 global_mean    (centroid) — mean of all perturbations — shared baseline for the ranking protocols
-gt             (cells) — ground truth — the first half of a perturbation's cells
+gt_all_cells   (cells) — ground truth — all of a perturbation's real cells (prediction-scoring truth)
+gt_half        (cells) — ground truth — the first half of a perturbation's cells (calibration truth)
 interpolated   (centroid) — interpolated duplicate — DE-weighted blend of the held-out half and the dataset mean (pseudobulk positive control)
+prediction     (cells) — model-predicted cells for the perturbation, from the --predictions h5ad
 tech_dup       (cells) — technical duplicate — the held-out second half (single-cell positive control)
 ```
 
 Each `provides` cells or a pseudobulk `centroid`. Use via `positive=`/`negative=` (or
-`--positive`/`--negative`). To add another, see [Add a control source](building-blocks.md#add-a-control-source).
+`--positive`/`--negative`). The truth source is chosen by the command, not by a protocol:
+`calibrate` uses `gt_half` (holding the other half out as the positive control), while `score`
+uses `gt_all_cells` and compares it to `prediction`. To add another, see
+[Add a control source](building-blocks.md#add-a-control-source).
 
 **Calibrators** (the `--output` choice)
 
@@ -161,9 +168,11 @@ Each `provides` cells or a pseudobulk `centroid`. Use via `positive=`/`negative=
 $ scperteval list calibrators
 drf    — Dynamic Range Fraction — mean/median over perturbations (Miller et al. 2025)
 bds    — Bound Discrimination Score — fraction of perturbations the positive control wins (SBB 2026)
+score  — raw metric of a prediction vs ground truth — mean/median over perturbations (prediction-scoring mode)
 ```
 
-Chosen with `--output`. To add another, see [Add a calibrator](building-blocks.md#add-a-calibrator).
+`drf`/`bds` are chosen with `calibrate --output`; `score` is selected automatically by the
+`score` command. To add another, see [Add a calibrator](building-blocks.md#add-a-calibrator).
 
 ### More examples
 
@@ -187,7 +196,7 @@ top-50 DEGs:
 Protocol("mae_top50", M.mae, representation="centroid", space="top_50", **_PB, **_LOWER)
 ```
 
-**Expose the space as a knob (parameterised).** To make `k` adjustable per run, add a
+**Expose the space as a knob (parameterised).** To make `k` adjustable per invocation, add a
 `param` to the same `Protocol(...)` row — nothing else changes. The row's name carries the
 parameter, and the value is supplied on the CLI:
 
@@ -195,7 +204,7 @@ parameter, and the value is supplied on the CLI:
 Protocol("mae_top_k", M.mae, representation="centroid", param=top_k, **_PB, **_LOWER)
 ```
 
-Then `scperteval run data.h5ad -p mae_top_k=30` (or `mae_top_k` for the default `k=50`). The
+Then `scperteval calibrate data.h5ad -p mae_top_k=30` (or `mae_top_k` for the default `k=50`). The
 families are `top_k` (top-k DEGs), `pca_k` (k PCs), and `degs_padj` (DEGs at adjusted
 p < padj) for the space, and `overlap_k` to feed an integer straight to the metric.
 
