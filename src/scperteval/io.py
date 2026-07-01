@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 
-def print_summary(cfg, aggregates: dict, calibrator, protocols) -> None:
+def _print_summary(cfg, aggregates: dict, calibrator, protocols) -> None:
     """Print a formatted table of aggregate scores for every protocol."""
     name = Path(cfg.dataset).stem
     print(f"\n{name} · {cfg.de_method} · subsample={cfg.subsample} · seed={cfg.seed} · output={cfg.output}\n")
@@ -23,7 +23,7 @@ def print_summary(cfg, aggregates: dict, calibrator, protocols) -> None:
     print()
 
 
-def write_rows(cfg, rows: list, timestamp: str) -> Path:
+def _write_rows(cfg, rows: list, timestamp: str) -> Path:
     """Write per-perturbation rows (raw controls + calibrated score) to a timestamped CSV."""
     out_dir = Path(cfg.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -40,7 +40,7 @@ def write_rows(cfg, rows: list, timestamp: str) -> Path:
     return path
 
 
-def write_timing(cfg, timed: list, timestamp: str) -> Path:
+def _write_timing(cfg, timed: list, timestamp: str) -> Path:
     """Write per-protocol wall-clock seconds (one row per protocol)."""
     out_dir = Path(cfg.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -59,7 +59,7 @@ def write_timing(cfg, timed: list, timestamp: str) -> Path:
     return path
 
 
-def write_de(cfg, genes, perturbations, results: dict, timestamp: str) -> Path:
+def _write_de(cfg, genes, perturbations, results: dict, timestamp: str) -> Path:
     """Write per-gene DE (statistic + adjusted p) per method to an HDF5 file.
 
     Layout: ``genes``, ``perturbations``, and one group per method holding

@@ -69,12 +69,12 @@ def _evaluate(cfg: RunConfig, protocols, ctx, quiet: bool) -> None:
         rows += proto_rows
         timed.append((p, seconds))
     if not quiet:
-        io.print_summary(cfg, aggregates, calibrator, protocols)
+        io._print_summary(cfg, aggregates, calibrator, protocols)
     stamp = datetime.now().strftime("%Y-%m-%dT%H%M%S")
-    path = io.write_rows(cfg, rows, stamp)
+    path = io._write_rows(cfg, rows, stamp)
     print(f"-> {path}")
     if cfg.profile:
-        print(f"-> {io.write_timing(cfg, timed, stamp)}")
+        print(f"-> {io._write_timing(cfg, timed, stamp)}")
 
 
 def cmd_calibrate(args) -> None:
@@ -145,7 +145,7 @@ def cmd_de(args) -> None:
     ctx._ensure_ref_sums()
     results = compute_de_export(ctx, methods)
     stamp = datetime.now().strftime("%Y-%m-%dT%H%M%S")
-    path = io.write_de(cfg, ctx.ds.var_names, ctx.perturbations, results, stamp)
+    path = io._write_de(cfg, ctx.ds.var_names, ctx.perturbations, results, stamp)
     print(f"-> {path}  ({len(ctx.perturbations)} perturbations, methods={methods})")
 
 

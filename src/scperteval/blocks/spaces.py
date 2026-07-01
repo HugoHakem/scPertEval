@@ -1,11 +1,14 @@
 """Feature spaces: a transform applied to the gene axis before a protocol runs.
 
-Spaces receive the raw (possibly sparse) cells and return a dense array, so a
-gene-subset space densifies only its subset. The parameterised families
-``top_<k>`` / ``pca_<k>`` / ``degs_<padj>`` are registered on demand by the
-``top_space`` / ``pca_space`` / ``degs_space`` factories (used by the protocol
-templates); the default instances created at import are what ``scperteval list spaces``
-shows. ``description`` is shown by ``scperteval list spaces``.
+A space receives raw (possibly sparse) cells and returns a dense array over a gene subset.
+Three parameterised families are registered on demand by factory functions:
+
+- ``top_<k>`` — top-k genes by ground-truth effect size (:func:`top_space`).
+- ``degs_<padj>`` — ground-truth DEGs at adjusted p < padj (:func:`degs_space`).
+- ``pca_<k>`` — top-k principal components (:func:`pca_space`).
+
+Default instances (``top_50``, ``degs_0.05``, ``pca_50``) are created at import;
+these are what ``scperteval list spaces`` shows.
 """
 
 from __future__ import annotations

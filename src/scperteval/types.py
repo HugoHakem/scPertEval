@@ -11,83 +11,53 @@ import numpy as np
 
 @dataclass
 class RunConfig:
-    """Resolved options for a single run.
+    """Resolved options for a single run."""
 
-    Attributes
-    ----------
-    dataset : str
-        Path to the preprocessed ``.h5ad`` file.
-    protocols : list of str
-        Names of the resolved (concrete) protocols to run.
-    de_method : str
-        DE backend for every DE-dependent unit (default ``"t-test"``).
-    subsample : int
-        Number of cells in the all-perturbed reference sample (default 8192).
-    seed : int
-        Random seed for subsampling and reproducibility (default 42).
-    positive : str
-        Override the positive control source; ``"auto"`` defers to the protocol.
-    negative : str
-        Override the negative control source; ``"auto"`` defers to the protocol.
-    truth : str
-        Label of the ground-truth condition used for DE (the perturbation key whose
-        cells serve as the ground-truth target; default ``"gt_half"``).
-    predictions : str or None
-        Path to a model-predictions ``.h5ad`` for prediction-scoring mode;
-        ``None`` selects calibration mode (default).
-    output : str
-        Calibrator to apply — ``"drf"`` or ``"bds"`` (default ``"drf"``).
-    out_dir : str
-        Directory for output CSV files (default ``"results"``).
-    workers : int
-        Number of worker threads; 0 auto-detects (default 0).
-    min_cells : int
-        Minimum cells required to evaluate a perturbation (default 30).
-    perturbation_key : str
-        ``adata.obs`` column holding perturbation labels (default ``"perturbation"``).
-    control_label : str
-        Label in ``perturbation_key`` that identifies control cells (default ``"control"``).
-    profile : bool
-        If ``True``, also write a per-protocol wall-clock timing CSV.
-    """
-
+    #: Path to the preprocessed ``.h5ad`` file.
     dataset: str
+    #: Names of the resolved (concrete) protocols to run.
     protocols: list[str]
+    #: DE backend for every DE-dependent unit (default ``"t-test"``).
     de_method: str = "t-test"
+    #: Number of cells in the all-perturbed reference sample (default 8192).
     subsample: int = 8192
+    #: Random seed for subsampling and reproducibility (default 42).
     seed: int = 42
+    #: Override the positive control source; ``"auto"`` defers to the protocol.
     positive: str = "auto"
+    #: Override the negative control source; ``"auto"`` defers to the protocol.
     negative: str = "auto"
+    #: Label of the ground-truth condition used for DE (the perturbation key whose cells serve as the ground-truth target; default ``"gt_half"``).
     truth: str = "gt_half"
+    #: Path to a model-predictions ``.h5ad`` for prediction-scoring mode; ``None`` selects calibration mode (default).
     predictions: str | None = None
+    #: Calibrator to apply — ``"drf"`` or ``"bds"`` (default ``"drf"``).
     output: str = "drf"
+    #: Directory for output CSV files (default ``"results"``).
     out_dir: str = "results"
+    #: Number of worker threads; 0 auto-detects (default 0).
     workers: int = 0
+    #: Minimum cells required to evaluate a perturbation (default 30).
     min_cells: int = 30
+    #: ``adata.obs`` column holding perturbation labels (default ``"perturbation"``).
     perturbation_key: str = "perturbation"
+    #: Label in ``perturbation_key`` that identifies control cells (default ``"control"``).
     control_label: str = "control"
+    #: If ``True``, also write a per-protocol wall-clock timing CSV.
     profile: bool = False
 
 
 @dataclass(frozen=True)
 class DEResult:
-    """Per-gene differential expression for one target-vs-reference comparison.
+    """Per-gene differential expression for one target-vs-reference comparison."""
 
-    Attributes
-    ----------
-    score : numpy.ndarray
-        Per-gene test statistic (e.g. t-statistic or Cliff's delta), shape ``(G,)``.
-    pvalue : numpy.ndarray
-        Raw per-gene p-values, shape ``(G,)``.
-    pvalue_adj : numpy.ndarray
-        Benjamini-Hochberg adjusted p-values, shape ``(G,)``.
-    extra : dict
-        Optional method-specific extras (e.g. ``{"u": u_statistic}`` for MWU).
-    """
-
+    #: Per-gene test statistic (e.g. t-statistic or Cliff's delta), shape ``(G,)``.
     score: np.ndarray
+    #: Raw per-gene p-values, shape ``(G,)``.
     pvalue: np.ndarray
+    #: Benjamini-Hochberg adjusted p-values, shape ``(G,)``.
     pvalue_adj: np.ndarray
+    #: Optional method-specific extras (e.g. ``{"u": u_statistic}`` for MWU).
     extra: dict = field(default_factory=dict)
 
 
@@ -97,23 +67,15 @@ class Param:
 
     ``space`` maps the value (``k=30``, ``padj=0.05``) to a feature-space name; when it is
     ``None`` the value is passed straight to the metric as a keyword argument.
-
-    Attributes
-    ----------
-    name : str
-        Keyword argument name passed to the metric or space factory (e.g. ``"k"``).
-    cast : Callable
-        Type cast applied to the CLI string (e.g. ``int``, ``float``).
-    default : float
-        Default value used when no value is given on the CLI.
-    space : Callable or None
-        Factory mapping the value to a feature-space name (e.g. ``top_space``);
-        ``None`` means the value is passed directly to the metric as a keyword argument.
     """
 
+    #: Keyword argument name passed to the metric or space factory (e.g. ``"k"``).
     name: str
+    #: Type cast applied to the CLI string (e.g. ``int``, ``float``).
     cast: Callable
+    #: Default value used when no value is given on the CLI.
     default: float
+    #: Factory mapping the value to a feature-space name (e.g. ``top_space``); ``None`` passes the value directly to the metric.
     space: Callable | None = None
 
 
@@ -150,52 +112,35 @@ class Protocol:
     control moves from the negative-control floor toward ``perfect`` in the ``better``
     direction, and BDS counts the perturbations where the positive control is ``better``
     than the negative.
-
-    Attributes
-    ----------
-    name : str
-        Protocol identifier used on the CLI (``-p name``) and in output CSVs.
-    metric : Callable
-        Pure metric function ``(gt, prediction, ctx) -> float``.
-    representation : str
-        Shape of each datapoint: ``"centroid"``, ``"population"``, or ``"de"``.
-    scope : str
-        ``"perturbation"`` (default) or ``"dataset"`` — how many perturbations the metric sees at once.
-    space : str
-        Feature space applied before scoring (default ``"full"``).
-    centering : str or None
-        Baseline subtracted before scoring — ``"ctrl"``, ``"allpert"``, or ``None``.
-    reference : str
-        Source used as the reference for the GT DE computation (default ``"all_perturbed"``).
-    neg_reference : str or None
-        Reference for the negative-control DE computation; ``None`` uses ``reference``.
-    better : str
-        ``"higher"`` or ``"lower"`` — which direction improves the score.
-    perfect : float
-        Score a flawless prediction attains (e.g. 1.0 for correlations, 0.0 for errors).
-    positive : str
-        Positive control source name (default ``"auto"``, deferring to the protocol).
-    negative : str
-        Negative control source name (default ``"auto"``, deferring to the protocol).
-    group : str
-        Display group for ``scperteval list protocols`` (e.g. ``"pseudobulk"``).
-    param : ~scperteval.types.Param or None
-        If set, makes the protocol tunable from the CLI; ``None`` for fixed protocols.
     """
 
+    #: Protocol identifier used on the CLI (``-p name``) and in output CSVs.
     name: str
+    #: Pure metric function ``(gt, prediction, ctx) -> float``.
     metric: Callable
+    #: One of ``"centroid"`` (pseudobulk vector), ``"population"`` (cells × genes matrix), or ``"de"`` (DEResult).
     representation: str
+    #: ``"perturbation"`` (default) or ``"dataset"`` — how many perturbations the metric sees at once.
     scope: str = "perturbation"
+    #: Feature space applied before scoring (default ``"full"``).
     space: str = "full"
+    #: Baseline subtracted before scoring — ``"ctrl"``, ``"allpert"``, or ``None``.
     centering: str | None = None
+    #: Source used as the reference for the GT DE computation (default ``"all_perturbed"``).
     reference: str = "all_perturbed"
+    #: Reference for the negative-control DE computation; ``None`` uses ``reference``.
     neg_reference: str | None = None
+    #: ``"higher"`` or ``"lower"`` — which direction improves the score.
     better: str = "higher"
+    #: Score a flawless prediction attains (e.g. 1.0 for correlations, 0.0 for errors).
     perfect: float = 1.0
+    #: Positive control source name (default ``"auto"``, deferring to the protocol).
     positive: str = "auto"
+    #: Negative control source name (default ``"auto"``, deferring to the protocol).
     negative: str = "auto"
+    #: Display group for ``scperteval list protocols`` (e.g. ``"pseudobulk"``).
     group: str = ""
+    #: If set, makes the protocol tunable from the CLI; ``None`` for fixed protocols.
     param: Param | None = None
 
     @property
@@ -216,26 +161,15 @@ class Protocol:
 
 @dataclass(frozen=True)
 class Calibrator:
-    """Turns per-control raw metric values into per-perturbation and aggregate scores.
+    """Turns per-control raw metric values into per-perturbation and aggregate scores."""
 
-    Attributes
-    ----------
-    name : str
-        Registry key and output column name (e.g. ``"drf"``).
-    requires : tuple of str
-        Control roles needed — typically ``("positive", "negative")``.
-    per_pert : Callable
-        ``(raws: dict, protocol: Protocol) -> float`` — combines raw control values
-        into one per-perturbation calibrated score.
-    aggregate : Callable
-        ``(values: numpy.ndarray) -> dict`` — reduces per-perturbation scores into
-        summary statistics (e.g. ``{"mean": …, "median": …}``).
-    description : str
-        Human-readable description shown by ``scperteval list calibrators``.
-    """
-
+    #: Registry key and output column name (e.g. ``"drf"``).
     name: str
+    #: Control roles needed — typically ``("positive", "negative")``.
     requires: tuple[str, ...]
+    #: ``(raws: dict, protocol: Protocol) -> float`` — combines raw control values into one per-perturbation calibrated score.
     per_pert: Callable
+    #: ``(values: numpy.ndarray) -> dict`` — reduces per-perturbation scores into summary statistics (e.g. ``{"mean": …, "median": …}``).
     aggregate: Callable
+    #: Human-readable description shown by ``scperteval list calibrators``.
     description: str = ""
