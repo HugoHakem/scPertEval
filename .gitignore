@@ -7,6 +7,11 @@ dist/
 .venv/
 venv/
 
+# Environment
+uv.lock
+.envrc
+requirements-local.txt
+
 # Run outputs
 results/
 
@@ -14,3 +19,7 @@ results/
 .idea/
 .vscode/
 .DS_Store
+
+# docs
+docs/generated/
+docs/_build/

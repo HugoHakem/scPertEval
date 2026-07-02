@@ -1,5 +1,6 @@
 """Tests for the differential-expression backends, focused on the scanpy
 ``t-test_overestim_var`` variant added as a selectable DE method."""
+
 from __future__ import annotations
 
 import anndata as ad
@@ -18,8 +19,7 @@ def _scanpy_overestim(Xt, Xr):
     adata.var_names = names
     adata.obs["g"] = ["target"] * Xt.shape[0] + ["reference"] * Xr.shape[0]
     adata.obs["g"] = adata.obs["g"].astype("category")
-    sc.tl.rank_genes_groups(adata, "g", groups=["target"], reference="reference",
-                            method="t-test_overestim_var")
+    sc.tl.rank_genes_groups(adata, "g", groups=["target"], reference="reference", method="t-test_overestim_var")
     res = adata.uns["rank_genes_groups"]
     order = np.array([int(n) for n in res["names"]["target"]])
     scores = np.empty(ng)
@@ -32,8 +32,8 @@ def _scanpy_overestim(Xt, Xr):
 def test_overestim_var_matches_scanpy():
     """Our backend reproduces scanpy's t-test_overestim_var statistic and p-values."""
     rng = np.random.default_rng(0)
-    Xt = rng.poisson(1.0, (40, 60)).astype(np.float64)   # small target group
-    Xr = rng.poisson(1.3, (90, 60)).astype(np.float64)   # larger reference
+    Xt = rng.poisson(1.0, (40, 60)).astype(np.float64)  # small target group
+    Xr = rng.poisson(1.3, (90, 60)).astype(np.float64)  # larger reference
     de = de_ttest_overestim(Xt, Xr)
     sc_scores, sc_pvals = _scanpy_overestim(Xt, Xr)
     assert np.allclose(de.score, sc_scores, atol=1e-5, rtol=1e-4)
@@ -76,8 +76,9 @@ def test_overestim_var_runs_through_export_path():
     adata = ad.AnnData(np.vstack(parts).astype(np.float64))
     adata.var_names = [f"g{i}" for i in range(ng)]
     adata.obs["perturbation"] = labels
-    cfg = RunConfig(dataset="-", protocols=[], de_method="t-test_overestim_var",
-                    subsample=200, seed=0, min_cells=10, workers=1)
+    cfg = RunConfig(
+        dataset="-", protocols=[], de_method="t-test_overestim_var", subsample=200, seed=0, min_cells=10, workers=1
+    )
     ctx = Context(Dataset(adata, cfg), cfg)
     out = compute_de_export(ctx, ["t-test_overestim_var"])
     stat, padj = out["t-test_overestim_var"]
