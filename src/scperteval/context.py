@@ -11,9 +11,6 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-if TYPE_CHECKING:
-    from sklearn.decomposition import PCA
-
 from .blocks.de import DE_METHODS, moments, ttest_from_moments
 from .blocks.spaces import SPACES
 from .dataset import Dataset, to_dense

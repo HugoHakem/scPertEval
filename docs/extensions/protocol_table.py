@@ -1,4 +1,5 @@
 """Sphinx directive that auto-generates a reference table of evaluation protocols."""
+
 from __future__ import annotations
 
 from docutils import nodes
