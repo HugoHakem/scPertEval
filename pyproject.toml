@@ -44,7 +44,11 @@ scripts.scperteval = "scperteval.cli:main"
 dev = [
   { include-group = "docs" },
   { include-group = "lint" },
+  { include-group = "notebook" },
   { include-group = "test" },
+]
+test = [
+  "pytest",
 ]
 docs = [
   "ipykernel",
@@ -59,6 +63,7 @@ docs = [
   "sphinx-design",
   "sphinxcontrib-bibtex>=1",
   "sphinxcontrib-katex",
+  "sphinxcontrib-mermaid",
   "sphinxext-opengraph",
 ]
 lint = [
@@ -66,8 +71,9 @@ lint = [
   "pyright",
   "ruff",
 ]
-test = [
-  "pytest",
+notebook = [
+  "ipykernel",
+  "jupyter-server",
 ]
 
 [tool.hatch]
