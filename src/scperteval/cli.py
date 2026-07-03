@@ -146,7 +146,8 @@ def cmd_de(args) -> None:
     results = compute_de_export(ctx, methods)
     stamp = datetime.now().strftime("%Y-%m-%dT%H%M%S")
     path = io._write_de(cfg, ctx.ds.var_names, ctx.perturbations, results, stamp)
-    print(f"-> {path}  ({len(ctx.perturbations)} perturbations, methods={methods})")
+    if not args.quiet:
+        print(f"-> {path}  ({len(ctx.perturbations)} perturbations, methods={methods})")
 
 
 def cmd_list(args) -> None:
@@ -260,6 +261,7 @@ def main(argv=None) -> None:
     de.add_argument("--min-cells", type=int, default=30)
     de.add_argument("--perturbation-key", default="perturbation")
     de.add_argument("--control-label", default="control")
+    de.add_argument("--quiet", action="store_true")
     de.set_defaults(func=cmd_de)
 
     lst = sub.add_parser("list", help="list available building blocks")
