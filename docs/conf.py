@@ -16,8 +16,8 @@ sys.path.insert(0, str(HERE / "extensions"))
 
 info = metadata("scperteval")
 project = info["Name"]
-_credited = (info.get_all("Author") or []) + (info.get_all("Maintainer") or []) + (
-    info.get_all("Maintainer-email") or []
+_credited = (
+    (info.get_all("Author") or []) + (info.get_all("Maintainer") or []) + (info.get_all("Maintainer-email") or [])
 )
 _names = dict.fromkeys(entry.split("<")[0].strip() for entry in _credited)
 author = ", ".join(_names) or "scPertEval authors"

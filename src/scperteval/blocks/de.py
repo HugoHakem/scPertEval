@@ -100,8 +100,7 @@ def bh(pvalue: np.ndarray) -> np.ndarray:
 
 
 def ttest_from_moments(mt, vt, nt, mr, vr, nr) -> DEResult:
-    """Welch's t-test from pre-computed per-gene moments
-    (:func:`scanpy.tl.rank_genes_groups`'s convention).
+    """Welch's t-test from pre-computed per-gene moments (:func:`scanpy.tl.rank_genes_groups`'s convention).
 
     Accepts moments directly so the context can cache the reference's moments
     once and combine them cheaply for every perturbation. The ``score`` field
