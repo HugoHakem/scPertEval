@@ -84,6 +84,7 @@ mermaid_d3_zoom = True
 nb_output_stderr = "remove"
 nb_execution_mode = "off"
 nb_merge_streams = True
+nb_render_markdown_format = "myst"
 typehints_defaults = "braces"
 always_use_bars_union = True
 
