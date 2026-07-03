@@ -8,12 +8,12 @@ version = "0.1.0"
 description = "Evaluation Protocols for Perturbation Studies: per-metric DRF/BDS calibration on a single preprocessed dataset."
 readme = "README.md"
 license = { file = "LICENSE" }
-authors = [
-  { name = "Zach Boldyga" },
-]
 maintainers = [
   { name = "Zach Boldyga" },
   { name = "Hugo Hakem", email = "hakem@ebi.ac.uk" },
+]
+authors = [
+  { name = "Zach Boldyga" },
 ]
 requires-python = ">=3.11"
 classifiers = [
@@ -78,6 +78,7 @@ notebook = [
 
 [tool.hatch]
 build.targets.wheel.packages = [ "src/scperteval" ]
+envs.hatch-test.matrix = [ { python = [ "3.11", "3.12", "3.13", "3.14" ] } ]
 
 [tool.ruff]
 target-version = "py311"
