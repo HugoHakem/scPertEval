@@ -14,6 +14,19 @@ from .dataset import to_dense
 from .registry import Registry
 
 SOURCES = Registry("source")
+"""Registry of control/reference sources; keys are source names (e.g. ``"gt_half"``).
+
+Use :meth:`~scperteval.registry.Registry.register` to add a custom source::
+
+    from scperteval.sources import SOURCES
+
+    @SOURCES.register("my_source", provides="cells", description="…")
+    def src_my_source(ctx, pert):
+        ...                            # cells or a centroid for `pert`
+        return cells
+
+Set ``provides`` to ``"cells"`` or ``"centroid"`` to match what the function returns.
+"""
 
 
 @SOURCES.register(

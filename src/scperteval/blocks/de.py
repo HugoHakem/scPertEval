@@ -4,7 +4,8 @@ Each backend maps ``(target_cells, reference_cells) → DEResult``. Three backen
 registered in :data:`DE_METHODS`:
 
 - ``"t-test"`` — Welch's t-test, default and fastest (:func:`de_ttest`).
-- ``"t-test_overestim_var"`` — scanpy's conservative variant (:func:`de_ttest_overestim`).
+- ``"t-test_overestim_var"`` — :func:`scanpy.tl.rank_genes_groups`'s conservative variant
+  (:func:`de_ttest_overestim`).
 - ``"MWU"`` — Mann-Whitney U via illico; score is Cliff's delta (:func:`de_mwu`).
 
 The t-test family is factored through :func:`ttest_from_moments` so the
@@ -99,7 +100,8 @@ def bh(pvalue: np.ndarray) -> np.ndarray:
 
 
 def ttest_from_moments(mt, vt, nt, mr, vr, nr) -> DEResult:
-    """Welch's t-test from pre-computed per-gene moments (scanpy convention).
+    """Welch's t-test from pre-computed per-gene moments
+    (:func:`scanpy.tl.rank_genes_groups`'s convention).
 
     Accepts moments directly so the context can cache the reference's moments
     once and combine them cheaply for every perturbation. The ``score`` field
@@ -147,7 +149,7 @@ def de_ttest(target, reference) -> DEResult:
     "target's cell count (selectable backend; not used by any current protocol)",
 )
 def de_ttest_overestim(target, reference) -> DEResult:
-    """Scanpy ``rank_genes_groups(method='t-test_overestim_var')``.
+    """:func:`scanpy.tl.rank_genes_groups` with ``method='t-test_overestim_var'``.
 
     Identical to Welch's t-test except the reference group's cell count is replaced by the
     target's, which inflates the reference standard-error term ("overestimating" its variance

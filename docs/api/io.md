@@ -1,6 +1,4 @@
-# Dataset & I/O
-
-## Dataset
+# Dataset
 
 ```{eval-rst}
 .. module:: scperteval.dataset
@@ -12,4 +10,3 @@
     Dataset
     to_dense
 ```
-

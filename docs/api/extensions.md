@@ -71,11 +71,19 @@ DE backends, feature spaces, control sources, and calibrators.
 ## Control sources
 
 ```{eval-rst}
+.. module:: scperteval.sources
+.. currentmodule:: scperteval.sources
+
 .. automodule:: scperteval.sources
    :no-members:
+   :no-index:
+
+.. autosummary::
+    :toctree: ../generated
+
+    SOURCES
 ```
 
-`scperteval.sources.SOURCES` — registry of all control/reference sources.
 Add entries here to register a new source; see [Add a control source](../user-guide/building-blocks.md#add-a-control-source).
 
 ## Predictions
