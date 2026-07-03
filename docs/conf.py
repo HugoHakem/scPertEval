@@ -16,7 +16,11 @@ sys.path.insert(0, str(HERE / "extensions"))
 
 info = metadata("scperteval")
 project = info["Name"]
-author = info.get("Author") or "scPertEval authors"
+_credited = (info.get_all("Author") or []) + (info.get_all("Maintainer") or []) + (
+    info.get_all("Maintainer-email") or []
+)
+_names = dict.fromkeys(entry.split("<")[0].strip() for entry in _credited)
+author = ", ".join(_names) or "scPertEval authors"
 copyright = f"{datetime.now():%Y}, {author}"
 version = info["Version"]
 _project_urls = info.get_all("Project-URL") or []
@@ -103,10 +107,15 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "**.ipynb_checkpoints", 
 html_theme = "sphinx_book_theme"
 html_static_path = ["_static"]
 html_css_files = ["css/custom.css"]
+html_favicon = "_static/logo/scPertEval-favicon.svg"
 
 html_title = project
 
 html_theme_options = {
+    "logo": {
+        "image_light": "_static/logo/scPertEval-logo.svg",
+        "image_dark": "_static/logo/scPertEval-dark-logo.svg",
+    },
     "repository_url": repository_url,
     "use_repository_button": True,
     "path_to_docs": "docs/",

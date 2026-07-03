@@ -1,4 +1,145 @@
+/* ============================================================================
+   scPertEval documentation theme
+   Color scheme derived from the scPertEval logo (docs/_static/logo), matching
+   the three colors used in the wordmark itself:
+     - blue   #015db0  ("sc")     -> primary accent / links
+     - ink    #223038  ("Pert")   -> secondary / heading text
+     - green  #4a8d2e  ("Eval")   -> decorative accent (hover, icons)
+   Built on top of sphinx-book-theme (pydata-sphinx-theme), so we steer the
+   theme through its CSS custom properties rather than theme options (the
+   theme.conf for sphinx_book_theme / pydata_sphinx_theme has no bespoke
+   "accent_color" option - that's a scanpydoc-only extension).
+   ========================================================================= */
+
+/* -- Brand palette --------------------------------------------------------- */
+:root {
+    --scperteval-blue: #015db0;
+    --scperteval-blue-deep: #004388;
+    --scperteval-ink: #223038;
+    --scperteval-green: #4a8d2e;
+    /* Darkened for text use (inline code): the logo's #4a8d2e is only ~4.09:1
+       on white, short of the 4.5:1 needed for small text. */
+    --scperteval-green-ink: #42801f;
+    --scperteval-cream: #f6e6dd;
+}
+
+/* -- Light mode ------------------------------------------------------------ */
+html[data-theme="light"] {
+    --pst-color-primary: var(--scperteval-blue);
+    --pst-color-primary-highlight: var(--scperteval-blue-deep);
+    --pst-color-secondary: var(--scperteval-ink);
+    --pst-color-secondary-highlight: var(--scperteval-green);
+    --pst-color-link: var(--scperteval-blue);
+    --pst-color-link-hover: var(--scperteval-blue-deep);
+    --pst-color-inline-code: var(--scperteval-green-ink);
+    /* {class}`~foo.Bar`-style xrefs render as <code> inside <a>, which the
+       theme colors via this separate variable - keep it in the same green
+       family as plain inline code so xrefs still read as "code". */
+    --pst-color-inline-code-links: var(--scperteval-green-ink);
+    --pst-color-accent: var(--scperteval-green);
+    --pst-color-target: #eaf3fb;
+
+    --sd-color-primary: var(--scperteval-blue);
+    --sd-color-primary-highlight: var(--scperteval-blue-deep);
+    --sd-color-shadow: rgba(34, 48, 56, 0.18);
+}
+
+/* -- Dark mode --------------------------------------------------------------
+   The base blue (#0172da, the dark-logo variant) only reaches ~3.75:1 against
+   the theme's dark background (#14181e), short of the 4.5:1 needed for body
+   text/links, so it's brightened here specifically for text contrast; the
+   logo's own dark-mode ink -> cream swap is reused as-is for headings. */
+html[data-theme="dark"] {
+    --pst-color-primary: #3d99f0;
+    --pst-color-primary-highlight: var(--scperteval-cream);
+    --pst-color-secondary: var(--scperteval-cream);
+    --pst-color-secondary-highlight: #ffffff;
+    --pst-color-link: #3d99f0;
+    --pst-color-link-hover: var(--scperteval-cream);
+    --pst-color-inline-code: #5bae39;
+    --pst-color-inline-code-links: #5bae39;
+    --pst-color-accent: #5bae39;
+    --pst-color-target: rgba(1, 93, 176, 0.25);
+
+    --sd-color-primary: #3d99f0;
+    --sd-color-primary-highlight: var(--scperteval-cream);
+    --sd-color-shadow: rgba(0, 0, 0, 0.5);
+}
+
+/* -- Logo sizing ------------------------------------------------------------
+   No max-height override here: sphinx-book-theme's own default
+   (.navbar-brand img { height: 100% }) already fills the 4rem header nicely
+   for this wordmark's 2.6:1 aspect ratio. The logo is a full wordmark, so
+   suppress the duplicate text title. */
+.navbar-brand .title {
+    display: none;
+}
+
+/* -- Sidebar section captions (colored, uppercase) -------------------------- */
+.bd-sidebar-primary .caption-text,
+nav.bd-links p.caption .caption-text {
+    color: var(--pst-color-primary);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: 0.78rem;
+}
+
+/* -- Landing-page cards (sphinx-design) ------------------------------------ */
+.sd-card {
+    border: 1px solid var(--pst-color-border);
+    border-radius: 0.6rem;
+    transition:
+        transform 0.18s ease,
+        box-shadow 0.18s ease,
+        border-color 0.18s ease;
+}
+.sd-card:hover {
+    transform: translateY(-3px);
+    border-color: var(--pst-color-accent);
+    box-shadow: 0 0.5rem 1.25rem var(--sd-color-shadow);
+}
+.sd-card .sd-card-title {
+    color: var(--pst-color-secondary);
+    font-weight: 600;
+}
+/* octicons inside card titles take the brand accent.
+   The svg's width/height are set in `em` by sphinx-design's octicon role,
+   so bumping font-size here scales the icon itself, not just its box. */
+.sd-card .sd-card-title .sd-octicon {
+    color: var(--pst-color-accent);
+    font-size: 1.5em;
+    margin-right: 0.4rem;
+    vertical-align: -0.2em;
+}
+.sd-card a.sd-card-title,
+.sd-card a.sd-card-title:hover {
+    text-decoration: none;
+}
+
+/* -- Mermaid diagram captions ------------------------------------------------
+   The theme colors figcaption with --pst-color-text-muted (a generic gray)
+   by default; use the same ink/cream secondary color as headings instead.
+   sphinxcontrib-mermaid's runtime JS (mermaid_fullscreen, on by default)
+   wraps pre.mermaid in a new .mermaid-container div once the page loads, so
+   it's no longer figcaption's immediate sibling - a `pre.mermaid + figcaption`
+   sibling selector matches the initial server-rendered HTML but not the live
+   DOM. Target the figure as an ancestor instead. */
+figure:has(.mermaid) figcaption {
+    color: var(--pst-color-secondary);
+    font-style: italic;
+}
+
 /* Reduce the font size in data frames - See https://github.com/scverse/cookiecutter-scverse/issues/193 */
 div.cell_output table.dataframe {
     font-size: 0.8em;
+}
+
+/* Mermaid diagrams render inside a <pre class="mermaid">, which otherwise inherits the
+   theme's generic code-block card styling (background/border/padding meant for source
+   listings). Strip that so diagrams sit directly on the page background. */
+pre.mermaid {
+    background-color: transparent;
+    border: none;
+    padding: 0;
 }
