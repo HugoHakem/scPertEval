@@ -36,9 +36,12 @@ uv run ruff check .
 uv run mypy src/scperteval
 ```
 
-Build the docs locally with live reload:
+Build the docs locally with live reload. The tutorial notebooks live in the
+[scPertEval-tutorials](https://github.com/Virtual-Cell-Research-Community/scPertEval-tutorials)
+submodule at `docs/notebooks`, so initialize it first:
 
 ```bash
+git submodule update --init --recursive
 uv sync --group docs
 uv run sphinx-autobuild docs docs/_build/html
 ```
