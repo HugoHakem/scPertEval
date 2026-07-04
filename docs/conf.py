@@ -103,7 +103,7 @@ intersphinx_mapping = {
     "sklearn": ("https://scikit-learn.org/stable/", None),
 }
 
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "**.ipynb_checkpoints", "notebooks/README.md"]
+exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "**.ipynb_checkpoints"]
 
 # -- Options for HTML output -------------------------------------------------
 
@@ -120,8 +120,10 @@ html_theme_options = {
         "image_dark": "_static/logo/scPertEval-dark-logo.svg",
     },
     "repository_url": repository_url,
+    "repository_branch": "main",
     "use_repository_button": True,
     "path_to_docs": "docs/",
+    "launch_buttons": {"colab_url": "https://colab.research.google.com"},
     "navigation_with_keys": False,
     "show_navbar_depth": 1,
 }

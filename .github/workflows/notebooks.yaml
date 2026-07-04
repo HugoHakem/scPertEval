@@ -15,10 +15,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-        with:
-          filter: blob:none
-          fetch-depth: 0
-          submodules: recursive
       - name: Install uv
         uses: astral-sh/setup-uv@v7
       - name: Install docs deps
@@ -27,4 +23,4 @@ jobs:
         # Docs render the committed (already-executed) notebooks, so re-run them here to
         # catch a tutorial that no longer runs against the current API. Output is discarded:
         # this only checks that the notebook still executes, not that its values match.
-        run: uv run jupyter nbconvert --to notebook --execute --stdout docs/notebooks/notebooks/*.ipynb > /dev/null
+        run: uv run jupyter nbconvert --to notebook --execute --stdout docs/notebooks/*.ipynb > /dev/null

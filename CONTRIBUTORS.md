@@ -25,11 +25,7 @@ protocol's results, so we want to agree on the approach before implementation.
 
 ## Tutorials and notebooks
 
-For tutorials and more in-depth examples, consider adding a notebook to the
-[scPertEval-tutorials](https://github.com/Virtual-Cell-Research-Community/scPertEval-tutorials)
-repository.
-
-The tutorials are tied to this repository via a submodule at `docs/notebooks`. To pull in
-the latest tutorials, run `git submodule update --remote docs/notebooks` from the root of
-this repository, then commit and push the resulting change to `docs/notebooks` in a PR.
-This should be done before each release to ensure the rendered tutorials are up to date.
+For tutorials and more in-depth examples, consider adding a notebook under `docs/notebooks/`.
+Commit it as an executed notebook (outputs saved) so the rendered docs show real output, then
+add it to the toctree in `docs/tutorials.md`. The `Notebooks` CI workflow re-executes every
+notebook against the current API to guard against tutorials that no longer run.
