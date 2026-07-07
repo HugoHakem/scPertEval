@@ -11,7 +11,7 @@ from __future__ import annotations
 from functools import partial
 from typing import Any
 
-from ..blocks.spaces import degs_space, pca_space, top_space
+from ..blocks.spaces import degs_space, expr_space, pca_space, top_space
 from ..types import Param, Protocol
 from . import metrics as M
 
@@ -20,6 +20,7 @@ top_k = Param("k", int, 50, space=top_space)  # top-k DEGs by effect size
 pca_k = Param("k", int, 50, space=pca_space)  # k principal components
 degs_padj = Param("padj", float, 0.05, space=degs_space)  # DEGs at adjusted p < padj
 overlap_k = Param("k", int, 50)  # passed straight to de_overlap's k
+expr_k = Param("k", int, 1000, space=expr_space)  # top-k genes by control expression (Ahlmann-Eltze et al. 2025)
 
 
 # --- shared wiring bundles (controls + score scale), splatted into rows with ** ---
@@ -58,6 +59,10 @@ TABLE = [
     Protocol(
         "pearson_pert_degs_padj", M.pearson, representation="centroid", centering="allpert", param=degs_padj, **_PB_CTRL
     ),
+    # --- Ahlmann-Eltze et al. 2025: top-1000 control-expressed genes, no calibration controls ---
+    Protocol("pearson_expr_k", M.pearson, representation="centroid", param=expr_k, **_PB),
+    Protocol("pearson_ctrl_expr_k", M.pearson, representation="centroid", centering="ctrl", param=expr_k, **_PB),
+    Protocol("l2_expr_k", M.l2, representation="centroid", param=expr_k, **_PB, **_LOWER),
     # --- cross-perturbation retrieval rank (dataset-wide over centroids) ---
     Protocol("rank", partial(M.rank_retrieval, transpose=False), representation="centroid", scope="dataset", **_RANK),
     Protocol(

@@ -29,6 +29,30 @@ def _bds_per_pert(raws, p):
     return float(wins)
 
 
+def _paired_diff_per_pert(raws, p):
+    """Per-perturbation gap, signed so positive means the ``positive`` role wins."""
+    pos, neg = raws["positive"], raws["negative"]
+    if not (np.isfinite(pos) and np.isfinite(neg)):
+        return float("nan")
+    return float(neg - pos) if p.better == "lower" else float(pos - neg)
+
+
+def _bootstrap_ci(values, n_resamples=10_000, seed=42):
+    """Percentile bootstrap 95% CI on the mean of ``values`` (nan entries dropped)."""
+    v = np.asarray(values, dtype=float)
+    v = v[np.isfinite(v)]
+    if v.size == 0:
+        return {"mean": float("nan"), "ci_low": float("nan"), "ci_high": float("nan")}
+    rng = np.random.default_rng(seed)
+    resampled = v[rng.integers(0, v.size, size=(n_resamples, v.size))]
+    boot_means = resampled.mean(axis=1)
+    return {
+        "mean": float(v.mean()),
+        "ci_low": float(np.quantile(boot_means, 0.025)),
+        "ci_high": float(np.quantile(boot_means, 0.975)),
+    }
+
+
 #: ``{name: Calibrator}`` dict — ``drf`` and ``bds`` for calibration mode, ``score`` for prediction-scoring mode.
 CALIBRATORS = {
     "drf": Calibrator(
@@ -51,5 +75,14 @@ CALIBRATORS = {
         lambda raws, p: raws["prediction"],
         lambda v: {"mean": float(np.nanmean(v)), "median": float(np.nanmedian(v))},
         description="raw metric of a prediction vs ground truth — mean/median over perturbations (prediction-scoring mode)",
+    ),
+    "paired_ci": Calibrator(
+        "paired_ci",
+        ("positive", "negative"),
+        _paired_diff_per_pert,
+        _bootstrap_ci,
+        description="10000-resample bootstrap 95% CI on the mean paired per-perturbation gap "
+        "between --positive and --negative (e.g. a model prediction vs. a baseline source); "
+        "the 'does it outperform' question behind Ahlmann-Eltze et al. 2025 and Miller et al. 2025",
     ),
 }

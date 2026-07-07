@@ -152,6 +152,26 @@ def mse(gt, prediction, ctx):
     return float(np.mean((gt - prediction) ** 2))
 
 
+@_doc(params=_CENTROID)
+def l2(gt, prediction, ctx):
+    r"""Euclidean distance between pseudobulk profiles.
+
+    .. math::
+
+        \ell_2 = \sqrt{\sum_{g=1}^G (gt_g - pred_g)^2}
+
+    Parameters
+    ----------
+    %(params)s
+
+    Returns
+    -------
+    float
+        Non-negative Euclidean distance; 0 is perfect.
+    """
+    return float(np.sqrt(np.sum((gt - prediction) ** 2)))
+
+
 @_doc(params=_CENTROID_W)
 def weighted_mse(gt, prediction, ctx, exp=2.0):
     r"""MSE weighted by ground-truth effect size raised to ``exp``.

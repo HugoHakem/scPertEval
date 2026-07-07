@@ -6,8 +6,9 @@ Three parameterised families are registered on demand by factory functions:
 - ``top_<k>`` — top-k genes by ground-truth effect size (:func:`top_space`).
 - ``degs_<padj>`` — ground-truth DEGs at adjusted p < padj (:func:`degs_space`).
 - ``pca_<k>`` — top-k principal components (:func:`pca_space`).
+- ``expr_<k>`` — top-k genes by control-condition expression (:func:`expr_space`).
 
-Default instances (``top_50``, ``degs_0.05``, ``pca_50``) are created at import;
+Default instances (``top_50``, ``degs_0.05``, ``pca_50``, ``expr_1000``) are created at import;
 these are what ``scperteval list spaces`` shows.
 """
 
@@ -156,7 +157,37 @@ def pca_space(k: int) -> str:
     return name
 
 
+def expr_space(k: int) -> str:
+    """top-k genes by control-condition expression (registered on demand).
+
+    Ranks genes dataset-wide by their mean expression in control cells — the same panel
+    for every perturbation, unlike :func:`top_space`/:func:`degs_space` which rank per
+    perturbation by ground-truth effect size. This is the gene-selection criterion used by
+    :cite:t:`AhlmannEltze_2025`.
+
+    Parameters
+    ----------
+    k : int
+        Number of genes to keep (highest control-mean expression, dataset-wide).
+
+    Returns
+    -------
+    str
+        Space name ``"expr_<k>"`` (e.g. ``"expr_1000"``).
+    """
+    name = f"expr_{k}"
+    if name not in SPACES:
+
+        def space(X, ctx, pert, k=k):
+            keep = np.argsort(-ctx.control_mean())[:k]
+            return to_dense(X[:, keep])
+
+        SPACES.add(name, space, global_space=True, description=f"top {k} genes by control-condition expression")
+    return name
+
+
 # Default instances — also what `scperteval list spaces` shows.
 top_space(50)
 pca_space(50)
 degs_space(0.05)
+expr_space(1000)

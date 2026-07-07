@@ -70,6 +70,19 @@ def test_missing_perturbation_raises(dataset_adata, predictions_factory, cfg_fac
         ps.cells("pertB")
 
 
+def test_score_mode_compares_prediction_against_a_baseline(dataset_adata, predictions_factory, cfg_factory):
+    # Miller et al.'s "model DRF": rank an actual prediction against a chosen baseline source,
+    # reusing the same drf/paired_ci calibrators as calibration mode via --positive/--negative.
+    cfg = cfg_factory(truth="gt_all_cells", output="drf", positive="prediction", negative="global_mean")
+    perfect = predictions_factory(dataset_adata, kind="perfect")
+    degraded = predictions_factory(dataset_adata, kind="degraded")
+
+    def drf_mean(pred):
+        return _score("pearson_ctrl", dataset_adata, pred, cfg)[0]["mean"]
+
+    assert drf_mean(perfect) > drf_mean(degraded)
+
+
 def test_gene_alignment_reorders_by_name(dataset_adata, predictions_factory, cfg_factory):
     # a shuffled-gene prediction is reordered to the dataset's gene order
     ds = Dataset(dataset_adata, cfg_factory())
