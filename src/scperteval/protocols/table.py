@@ -42,6 +42,7 @@ _DE: dict[str, Any] = dict(
 _RANK: dict[str, Any] = dict(
     group="pseudobulk", positive="interpolated", negative="global_mean", better="lower", perfect=0.0
 )
+_NIR: dict[str, Any] = dict(group="pseudobulk", positive="interpolated", negative="global_mean")
 
 
 TABLE = [
@@ -63,11 +64,50 @@ TABLE = [
     Protocol("pearson_expr_k", M.pearson, representation="centroid", param=expr_k, **_PB),
     Protocol("pearson_ctrl_expr_k", M.pearson, representation="centroid", centering="ctrl", param=expr_k, **_PB),
     Protocol("l2_expr_k", M.l2, representation="centroid", param=expr_k, **_PB, **_LOWER),
+    # --- Miller et al. 2025 / Vollenweider & Bühlmann 2026: R2 and DE-weighted delta
+    # correlations, each in three gene-set variants (all genes / DEG top-k / DEG padj / DE
+    # effect-size-weighted) — MSE's own three variants are mse / mse_top_k+mse_degs_padj /
+    # wmse_exp1-4 above; PearsonDeltaPerturbMean's are pearson_pert / pearson_pert_top_k+
+    # pearson_pert_degs_padj / weighted_pearson_pert_exp2 below.
+    Protocol("pearson_ctrl_top_k", M.pearson, representation="centroid", centering="ctrl", param=top_k, **_PB),
+    Protocol("pearson_ctrl_degs_padj", M.pearson, representation="centroid", centering="ctrl", param=degs_padj, **_PB),
+    Protocol(
+        "weighted_pearson_ctrl_exp2",
+        partial(M.weighted_pearson, exp=2.0),
+        representation="centroid",
+        centering="ctrl",
+        **_PB,
+    ),
+    Protocol(
+        "weighted_pearson_pert_exp2",
+        partial(M.weighted_pearson, exp=2.0),
+        representation="centroid",
+        centering="allpert",
+        **_PB_CTRL,
+    ),
+    Protocol("r2_ctrl", M.r2, representation="centroid", centering="ctrl", **_PB),
+    Protocol("r2_ctrl_top_k", M.r2, representation="centroid", centering="ctrl", param=top_k, **_PB),
+    Protocol("r2_ctrl_degs_padj", M.r2, representation="centroid", centering="ctrl", param=degs_padj, **_PB),
+    Protocol(
+        "weighted_r2_ctrl_exp2", partial(M.weighted_r2, exp=2.0), representation="centroid", centering="ctrl", **_PB
+    ),
+    Protocol("r2_pert", M.r2, representation="centroid", centering="allpert", **_PB_CTRL),
+    Protocol("r2_pert_top_k", M.r2, representation="centroid", centering="allpert", param=top_k, **_PB_CTRL),
+    Protocol("r2_pert_degs_padj", M.r2, representation="centroid", centering="allpert", param=degs_padj, **_PB_CTRL),
+    Protocol(
+        "weighted_r2_pert_exp2",
+        partial(M.weighted_r2, exp=2.0),
+        representation="centroid",
+        centering="allpert",
+        **_PB_CTRL,
+    ),
     # --- cross-perturbation retrieval rank (dataset-wide over centroids) ---
     Protocol("rank", partial(M.rank_retrieval, transpose=False), representation="centroid", scope="dataset", **_RANK),
     Protocol(
         "transpose_rank", partial(M.rank_retrieval, transpose=True), representation="centroid", scope="dataset", **_RANK
     ),
+    # --- Miller et al. 2025: Normalized Inverse Rank — transpose_rank, oriented higher-is-better ---
+    Protocol("nir", M.nir, representation="centroid", scope="dataset", **_NIR),
     # --- distributional: distances between cell populations (positive = technical duplicate) ---
     Protocol("unbiased_mmd_median_top_k", M.unbiased_mmd_median, representation="population", param=top_k, **_DIST),
     Protocol("unbiased_mmd_median_pca_k", M.unbiased_mmd_median, representation="population", param=pca_k, **_DIST),

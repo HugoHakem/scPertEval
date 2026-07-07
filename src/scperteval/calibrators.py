@@ -7,6 +7,7 @@ cross-perturbation aggregate.
 from __future__ import annotations
 
 import numpy as np
+from scipy import stats
 
 from .types import Calibrator
 
@@ -53,6 +54,30 @@ def _bootstrap_ci(values, n_resamples=10_000, seed=42):
     }
 
 
+def _ttest_result(values):
+    """Paired one-sided Student t-test (H1: mean diff > 0).
+
+    Equivalent to a paired t-test on the two raw sources, since
+    ``ttest_1samp(a - b, 0) == ttest_rel(a, b)``.
+    """
+    v = np.asarray(values, dtype=float)
+    v = v[np.isfinite(v)]
+    if v.size < 2:
+        return {"mean": float("nan"), "statistic": float("nan"), "pvalue": float("nan")}
+    statistic, pvalue = stats.ttest_1samp(v, popmean=0.0, alternative="greater")
+    return {"mean": float(v.mean()), "statistic": float(statistic), "pvalue": float(pvalue)}
+
+
+def _wilcoxon_result(values):
+    """Paired one-sided Wilcoxon signed-rank test (H1: median diff > 0)."""
+    v = np.asarray(values, dtype=float)
+    v = v[np.isfinite(v)]
+    if v.size < 1 or np.all(v == 0):
+        return {"mean": float(v.mean()) if v.size else float("nan"), "statistic": float("nan"), "pvalue": float("nan")}
+    statistic, pvalue = stats.wilcoxon(v, alternative="greater")
+    return {"mean": float(v.mean()), "statistic": float(statistic), "pvalue": float(pvalue)}
+
+
 #: ``{name: Calibrator}`` dict — ``drf`` and ``bds`` for calibration mode, ``score`` for prediction-scoring mode.
 CALIBRATORS = {
     "drf": Calibrator(
@@ -84,5 +109,23 @@ CALIBRATORS = {
         description="10000-resample bootstrap 95% CI on the mean paired per-perturbation gap "
         "between --positive and --negative (e.g. a model prediction vs. a baseline source); "
         "the 'does it outperform' question behind Ahlmann-Eltze et al. 2025 and Miller et al. 2025",
+    ),
+    "ttest": Calibrator(
+        "ttest",
+        ("positive", "negative"),
+        _paired_diff_per_pert,
+        _ttest_result,
+        description="paired one-sided Student t-test (H1: mean diff > 0) between --positive and "
+        "--negative (Miller et al. 2025); reports the raw p-value — apply a Bonferroni "
+        "correction yourself across however many comparisons you're running at once",
+    ),
+    "wilcoxon": Calibrator(
+        "wilcoxon",
+        ("positive", "negative"),
+        _paired_diff_per_pert,
+        _wilcoxon_result,
+        description="paired one-sided Wilcoxon signed-rank test (H1: median diff > 0) between "
+        "--positive and --negative (Miller et al. 2025); reports the raw p-value — apply a "
+        "Bonferroni correction yourself across however many comparisons you're running at once",
     ),
 }
