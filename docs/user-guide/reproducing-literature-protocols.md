@@ -11,6 +11,11 @@ predictors — on overlapping perturbation datasets, and reach opposite headline
 - {cite}`AhlmannEltze_2025`, *"Deep learning-based predictions of gene perturbation effects do
   not yet outperform simple linear baselines"*
 
+A third, related preprint, {cite}`Vollenweider_2026` (*"Signal, Bounds, and Baselines: Principles
+for Rigorous Evaluation of High-Dimensional Biological Perturbation Prediction"*), builds directly
+on Miller et al.'s metric family — most concretely, extending its DE-effect-size weighting scheme
+to Pearson correlation as the **Weighted Pearson Delta** (see the Miller et al. section below).
+
 The disagreement is not really about the models. It is about the **evaluation protocol**: which
 representation, which metric, which baseline, and which notion of "outperform" each paper uses.
 That is exactly the axis scPertEval is built to make explicit and swappable — a protocol here is
@@ -38,8 +43,10 @@ empirical controls before trusting its verdict:
 
 - a **positive control** — a technical duplicate (a held-out half of a perturbation's own cells),
   or, for pseudobulk metrics, an **interpolated duplicate**: a per-gene blend of the duplicate and
-  the dataset mean, weighted by how significantly differentially expressed each gene is. This
-  approximates the best a real, unbiased predictor could achieve.
+  the dataset mean, weighted by how significantly differentially expressed each gene is (DEGs
+  computed against *all other perturbed cells*, the same reference population used everywhere
+  else in the paper — not control). This approximates the best a real, unbiased predictor could
+  achieve.
 - a **negative control** — the dataset mean (or control-cell mean), an intentionally uninformative
   baseline.
 
@@ -58,6 +65,62 @@ separate from the mean/control baselines — hence the paper's title.
 scPertEval's `calibrate` mode is already a close port of this framework — `tech_dup`,
 `interpolated`, `all_perturbed_mean`, and the `drf` calibrator (`scperteval calibrate ... --output
 drf`) implement exactly the controls and formula above (see [Calibration](calibration.md)).
+
+**Their own metric family.** Calibration is orthogonal to *which* metric gets calibrated — Miller
+et al. also propose a specific family of pseudobulk metrics, each scored on the prediction's
+deviation from a reference point ("delta") rather than the raw profile:
+
+- **MSE** — mean squared error on the raw profile.
+- **PearsonDeltaCtrl** / **PearsonDeltaPerturbMean** — Pearson correlation between the predicted
+  and observed change from control, or from the leave-one-out mean of all *other* perturbations.
+- **R2DeltaCtrl** / **R2DeltaPerturbMean** — the same two deltas, scored by the coefficient of
+  determination ($R^2 = 1 - \mathrm{SS_{res}}/\mathrm{SS_{tot}}$, floored at $-1$) instead of
+  Pearson $r$. Unlike Pearson, $R^2$ penalises bias and scale errors, not just linear association
+  — a prediction that is perfectly correlated with, but off-scale from, the truth still loses $R^2$.
+- **NIR (Normalized Inverse Rank)** — for each perturbation, rank its predicted centroid's
+  distance to *every* perturbation's ground-truth centroid, normalise to $[0, 1]$, and invert so
+  1 is a perfect top-1 retrieval.
+
+Miller et al.'s own gene-set axis has only two levels per metric — MSE and the two Pearson
+deltas each come as every gene or only significant DEGs ($p_{\text{adj}} < 0.05$); **WMSE**
+(their weighted-MSE variant) and the two R² deltas additionally get a *third*, continuously
+DE-effect-size-weighted variant, using the per-gene weight
+$w_g \propto |t_g|^{\text{exp}} / \sum_{g'} |t_{g'}|^{\text{exp}}$ ($t_g$ the ground-truth DE
+t-statistic). That gives Miller et al. 2025's own count of 13 metrics exactly: MSE + WMSE +
+(Pearson: 2 baselines × 2 gene-sets = 4) + ($R^2$: 2 baselines × 3 gene-sets = 6) + NIR = 13.
+{cite}`Vollenweider_2026` (*"Signal, Bounds, and Baselines"*) then extends the same
+effect-size weighting to Pearson correlation too — the **Weighted Pearson Delta** — which is
+*not* one of Miller et al.'s own 13.
+
+All of this now exists natively:
+
+| Metric | scPertEval protocol |
+|---|---|
+| MSE | `mse` (all genes) / `mse_degs_padj` (DEG) |
+| WMSE | `wmse_exp1`, `wmse_exp2`, `wmse_exp4` (DE-weighted, three exponents) |
+| PearsonDeltaCtrl | `pearson_ctrl` (all genes) / `pearson_ctrl_degs_padj` (DEG) |
+| PearsonDeltaPerturbMean | `pearson_pert` (all genes) / `pearson_pert_degs_padj` (DEG) |
+| R2DeltaCtrl | `r2_ctrl` (all genes) / `r2_ctrl_degs_padj` (DEG) / `weighted_r2_ctrl_exp2` (DE-weighted) |
+| R2DeltaPerturbMean | `r2_pert` (all genes) / `r2_pert_degs_padj` (DEG) / `weighted_r2_pert_exp2` (DE-weighted) |
+| NIR | `nir` |
+| Weighted Pearson Delta ({cite}`Vollenweider_2026`, not one of Miller's 13) | `weighted_pearson_ctrl_exp2` / `weighted_pearson_pert_exp2` |
+
+```bash
+# Miller et al.'s DE-weighted delta correlation, restricted to significant DEGs / continuously weighted
+scperteval score data.h5ad predictions.h5ad -p pearson_ctrl_degs_padj=0.05,weighted_r2_ctrl_exp2,nir
+```
+
+Every row can be combined with the DRF/BDS calibration above, or scored directly against a
+model's predictions (`scperteval score`) — calibration and metric choice are independent axes
+of the same protocol table.
+
+**Statistical tests.** Miller et al. use three: a bootstrap 95% CI (`paired_ci`, shared with
+Ahlmann-Eltze et al. below), a paired one-sided Student t-test, and a paired one-sided Wilcoxon
+signed-rank test — the latter two now exist as the `ttest`/`wilcoxon` calibrators, each
+reporting a raw p-value. Their cross-model Bonferroni correction needs the total number of
+comparisons being run at once, which a single calibrator run has no way to know — so it's
+applied downstream, across whatever set of (model, protocol) pairs the caller is actually
+comparing (see `models/compare.py`'s worked example), not inside the calibrator itself.
 
 **Splitting perturbations for cross-validation.** Held-out perturbations are chosen by genuine
 5-fold cross-validation (2-fold for the double-perturbation datasets — Norman19, Wessels23, and,
@@ -118,9 +181,14 @@ calibrator (`calibrators.py`) reproduces the *shape* of both papers' significanc
 bootstrapped 95% CI on a paired per-perturbation gap — as a signed difference oriented by the
 protocol's own `better` direction, rather than Ahlmann-Eltze's specific ratio
 ($\ell_2/\ell_2^{\text{mean}}$), so it applies uniformly to correlation- and error-type metrics
-alike; it does not implement Miller et al.'s cross-model Bonferroni correction, which needs several
-models' p-values at once rather than a single run. The additive baseline source for combinatorial
-perturbations still does not exist.
+alike.
+
+The **Mean** and **linear** baselines (`models/baselines/baselines.py`'s `fold_mean_baseline`
+and `linear_baseline`, ported from const-ae/linear_perturbation_prediction-Paper's
+`run_linear_pretrained_model.R`) are implemented in the `models/` reproduction scaffold — a
+baseline choice is a model/prediction-source decision, not a protocol-table concept, so it
+lives alongside GEARS/scGPT rather than in `src/scperteval/`. The additive baseline source for
+combinatorial perturbations still does not exist.
 
 **Splitting perturbations for cross-validation.** Held-out perturbations are chosen very
 differently from Miller et al.'s CV. Single-gene datasets use GEARS's `simulation` split, which
@@ -150,11 +218,16 @@ run:
 | What the paper reports | scPertEval today |
 |---|---|
 | Miller et al.'s DRF/BDS calibration | `scperteval calibrate ... --output drf` — native |
-| Miller et al.'s model-vs-baseline ranking (their second, model-comparison DRF) | `scperteval score ... --positive prediction --negative <baseline> --output drf` — native, reusing the same `drf` calibrator (clipped to `[-1, 1]`, not cellsimbench's `[-1, 2]`) |
+| Miller et al.'s model-vs-baseline ranking (their second, model-comparison DRF) | `scperteval score ... --positive prediction --output drf` — native, reusing the same `drf` calibrator (clipped to `[-1, 1]`, not cellsimbench's `[-1, 2]`) |
+| Miller et al.'s metric family — MSE/WMSE/PearsonDelta/R2Delta × all-genes/DEG/DE-weighted, plus NIR | `mse`/`mse_degs_padj`, `wmse_exp1/2/4`, `pearson_ctrl`/`pearson_pert` (+ `_degs_padj` siblings), `r2_ctrl`/`r2_pert` (+ `_degs_padj` and `weighted_..._exp2` siblings), `nir` — all native |
+| Vollenweider & Bühlmann 2026's Weighted Pearson Delta | `weighted_pearson_ctrl_exp2` / `weighted_pearson_pert_exp2` — native |
 | Ahlmann-Eltze's Pearson Delta / raw $r$ / $\ell_2$ on the top-1000 control-expressed genes | `pearson_ctrl_expr_k` / `pearson_expr_k` / `l2_expr_k` — native |
-| Both papers' bootstrap-CI "outperform" question | `scperteval score ... --positive prediction --negative <baseline> --output paired_ci` — native, as a signed paired difference rather than Ahlmann-Eltze's specific ratio; no cross-model Bonferroni correction |
+| Both papers' bootstrap-CI "outperform" question | `scperteval score ... --positive prediction --output paired_ci` — native, as a signed paired difference rather than Ahlmann-Eltze's specific ratio |
+| Miller et al.'s paired t-test / Wilcoxon signed-rank tests | `--output ttest` / `--output wilcoxon` — native, raw p-value; Bonferroni correction is applied downstream across whichever comparisons are actually run (`models/compare.py`), not inside the calibrator |
+| Ahlmann-Eltze's Mean baseline (fold-scoped, not dataset-wide leave-one-out) and linear baseline (PCA + ridge bilinear regression) | `models/baselines/baselines.py`'s `fold_mean_baseline`/`linear_baseline` — implemented in the `models/` scaffold, not the protocol table (a baseline is a prediction source, like GEARS/scGPT, not a metric) |
 | The additive combinatorial baseline | not yet available — an `additive` source, built from constituent single-perturbation ground truth |
-| Miller et al.'s 5-fold perturbation CV vs. Ahlmann-Eltze's repeated random gene-holdout | neither is a protocol concern in scPertEval today — held-out perturbations come from the dataset, not the protocol table; would need a dataset-preparation step exposing fold/seed columns, analogous to `get_data.py`'s `split_fold_N`, kept separate from the protocol/metric layer |
+| Miller et al.'s 5-fold perturbation CV vs. Ahlmann-Eltze's repeated random gene-holdout | neither is a protocol concern in scPertEval today — held-out perturbations come from the dataset, not the protocol table. `models/`'s own k-fold scaffold implements Miller's design (see `prepare_split.py`); scPertEval's `calibrate`/`score` modes themselves remain fold-agnostic by construction (a dataset-level diagnostic, not tied to any one model's CV loop) |
+| Miller et al.'s exact filtering/normalization/gene-selection (B.2: min 12 cells/perturbation, target-sum 10k + log1p, gene set = top-8192 HVGs ∪ perturbed genes) | unverified — whether the shared `replogle22k562_processed_complete.h5ad` file matches these thresholds hasn't been checked, and `models/data/prepare_data.py`'s smoke-scale subsample uses a fixed cell cap and the full gene panel rather than Miller's dynamic cap and HVG-restricted gene set |
 
 — and show, side by side, that the same models get ranked differently depending on which row of
 that table is applied.
