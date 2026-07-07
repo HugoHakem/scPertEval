@@ -16,17 +16,52 @@ https://storage.googleapis.com/scperteval/processed/<dataset>_processed_complete
 
 | Dataset | Cell line | Reference |
 |---|---|---|
-| `replogle22k562` | K562 | Replogle et al. 2022 |
-| `replogle22rpe1` | RPE1 | Replogle et al. 2022 |
-| `nadig25hepg2` | HepG2 | Nadig et al. 2025 |
-| `nadig25jurkat` | Jurkat | Nadig et al. 2025 |
-| `wessels23` | — | Wessels et al. 2023 |
-| `arch1` | — | — |
-| `kaden25rpe1` | RPE1 | Kaden et al. 2025 |
+| `replogle22k562` | K562 | {cite}`Replogle_2022` |
+| `replogle22rpe1` | RPE1 | {cite}`Replogle_2022` |
+| `nadig25hepg2` | HepG2 | {cite}`Nadig_2025` |
+| `nadig25jurkat` | Jurkat | {cite}`Nadig_2025` |
+| `wessels23` | THP-1 | {cite}`Wessels_2023` |
+| `arch1` | H1 hESC | {cite}`Roohani_2025` |
+| `kaden25rpe1` | RPE1 | {cite}`Kaden_2025` |
+
+- `replogle22k562` / `replogle22rpe1` — CRISPRi Perturb-seq targeting ~2,057 essential genes, in
+  K562 (chronic myeloid leukemia) and RPE1 (non-cancerous retinal pigment epithelial) cells
+  respectively. This is the paper's *essential-gene* panel, not its much larger genome-wide K562
+  screen (~9,866 genes, "K562_gwps") — that screen isn't part of scPertEval's datasets.
+- `nadig25hepg2` / `nadig25jurkat` — companion genome-scale CRISPRi Perturb-seq screens
+  extending the same essential-gene protocol to HepG2 (liver) and Jurkat (T-cell) lines.
+- `wessels23` — Cas13 combinatorial Perturb-seq (CaRPool-seq) in THP-1 cells (an AML model),
+  knocking down pairs of myeloid differentiation regulators (26 regulators, 158 gene-pairs); the
+  only dataset here with two-gene combination knockdowns.
+- `arch1` — the Virtual Cell Challenge benchmark: CRISPRi perturbations in H1 human embryonic
+  stem cells. scPertEval's copy is the challenge's released training split (150 perturbations);
+  the public/private test splits used for the challenge leaderboard aren't included.
+- `kaden25rpe1` — a transcription-factor perturbation screen in RPE1 cells probing induction of
+  fibroblast-like transcriptional states — reprogramming-oriented, unlike the essentiality
+  screens above.
+
+### Summary statistics
+
+Cell and perturbation counts per dataset, split by single-gene vs. two-gene (combination)
+perturbations. Counts exclude control cells.
+
+| Dataset | Cells | Control cells | Perturbed cells (single) | Perturbed cells (double) | Unique perts (single) | Unique perts (double) |
+|---|---:|---:|---:|---:|---:|---:|
+| `replogle22k562` | 308,646 | 10,691 | 297,955 | 0 | 1,971 | 0 |
+| `replogle22rpe1` | 240,774 | 11,485 | 229,289 | 0 | 2,016 | 0 |
+| `nadig25hepg2` | 133,757 | 4,976 | 128,781 | 0 | 1,818 | 0 |
+| `nadig25jurkat` | 258,202 | 12,013 | 246,189 | 0 | 2,137 | 0 |
+| `wessels23` | 28,490 | 424 | 0 | 28,066 | 0 | 157 |
+| `arch1` | 221,273 | 38,176 | 183,097 | 0 | 150 | 0 |
+| `kaden25rpe1` | 850,225 | 42,233 | 807,992 | 0 | 1,836 | 0 |
 
 :::{note}
-`wessels23` contains only **combination** perturbations. Single-gene perturbations (used as
-additive-model building blocks) are excluded from evaluation targets.
+Every dataset except `wessels23` consists entirely of single-gene knockdowns/knockouts.
+The hosted `wessels23` contains only **combination** perturbations — its single-gene
+perturbations (used as additive-model building blocks) are excluded from evaluation targets,
+hence 0 in the table above. To recover the single-gene cells too, prepare `wessels23` yourself
+from the raw file instead of using the hosted copy — the
+[Preparing a dataset](../tutorials.md) tutorial keeps both singles and combos.
 :::
 
 ## Format
