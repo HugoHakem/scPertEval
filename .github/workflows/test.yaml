@@ -88,7 +88,10 @@ jobs:
       - name: Upload coverage
         uses: codecov/codecov-action@v6
         with:
-          fail_ci_if_error: true
+          # Don't fail the job if the upload fails: the repo isn't activated in the
+          # Virtual-Cell-Research-Community Codecov org yet, so OIDC tokenless upload is
+          # rejected. Flip back to true once Codecov is set up (see CONTRIBUTORS/PR notes).
+          fail_ci_if_error: false
           use_oidc: true
 
   # Check that all tests defined above pass. This makes it easy to set a single "required" test in branch
