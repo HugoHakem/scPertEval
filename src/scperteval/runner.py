@@ -12,12 +12,12 @@ from .sources import SOURCES
 from .types import Calibrator, Protocol
 
 
-def n_workers(cfg) -> int:
+def _n_workers(cfg) -> int:
     """Resolve the worker-thread count (``0`` = auto: CPU count minus 2, capped at 16)."""
     return cfg.workers if cfg.workers > 0 else max(1, min(16, (os.cpu_count() or 2) - 2))
 
 
-def resolve_roles(p: Protocol, cfg) -> dict:
+def _resolve_roles(p: Protocol, cfg) -> dict:
     """Map each candidate calibrator role to a source name.
 
     ``positive`` / ``negative`` come from the protocol (or a CLI override); ``prediction``
@@ -55,7 +55,7 @@ def run_protocol(p: Protocol, ctx, calibrator: Calibrator):
     seconds : float
         Wall-clock time for this protocol.
     """
-    roles = resolve_roles(p, ctx.cfg)
+    roles = _resolve_roles(p, ctx.cfg)
     needed = {role: roles[role] for role in calibrator.requires}
     _check_sources(p, needed)
     run = _run_dataset if p.scope == "dataset" else _run_per_perturbation
@@ -87,7 +87,7 @@ def _run_per_perturbation(p: Protocol, ctx, calibrator: Calibrator, needed: dict
 
     perts = ctx.perturbations
     start = perf_counter()
-    with ThreadPoolExecutor(max_workers=n_workers(ctx.cfg)) as pool:
+    with ThreadPoolExecutor(max_workers=_n_workers(ctx.cfg)) as pool:
         raws_list = list(pool.map(work, perts))
     seconds = perf_counter() - start
     agg, rows = _finalize(p, calibrator, perts, raws_list)
@@ -134,7 +134,7 @@ def compute_de_export(ctx, methods):
             de = ctx.de(pert, ctx.cfg.truth, "all_perturbed")
             return de.score, de.pvalue_adj
 
-        with ThreadPoolExecutor(max_workers=n_workers(ctx.cfg)) as pool:
+        with ThreadPoolExecutor(max_workers=_n_workers(ctx.cfg)) as pool:
             res = list(pool.map(work, ctx.perturbations))
         out[method] = (np.vstack([r[0] for r in res]), np.vstack([r[1] for r in res]))
     return out

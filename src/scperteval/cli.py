@@ -69,12 +69,12 @@ def _evaluate(cfg: RunConfig, protocols, ctx, quiet: bool) -> None:
         rows += proto_rows
         timed.append((p, seconds))
     if not quiet:
-        io.print_summary(cfg, aggregates, calibrator, protocols)
+        io._print_summary(cfg, aggregates, calibrator, protocols)
     stamp = datetime.now().strftime("%Y-%m-%dT%H%M%S")
-    path = io.write_rows(cfg, rows, stamp)
+    path = io._write_rows(cfg, rows, stamp)
     print(f"-> {path}")
     if cfg.profile:
-        print(f"-> {io.write_timing(cfg, timed, stamp)}")
+        print(f"-> {io._write_timing(cfg, timed, stamp)}")
 
 
 def cmd_calibrate(args) -> None:
@@ -145,8 +145,9 @@ def cmd_de(args) -> None:
     ctx._ensure_ref_sums()
     results = compute_de_export(ctx, methods)
     stamp = datetime.now().strftime("%Y-%m-%dT%H%M%S")
-    path = io.write_de(cfg, ctx.ds.var_names, ctx.perturbations, results, stamp)
-    print(f"-> {path}  ({len(ctx.perturbations)} perturbations, methods={methods})")
+    path = io._write_de(cfg, ctx.ds.var_names, ctx.perturbations, results, stamp)
+    if not args.quiet:
+        print(f"-> {path}  ({len(ctx.perturbations)} perturbations, methods={methods})")
 
 
 def cmd_list(args) -> None:
@@ -260,6 +261,7 @@ def main(argv=None) -> None:
     de.add_argument("--min-cells", type=int, default=30)
     de.add_argument("--perturbation-key", default="perturbation")
     de.add_argument("--control-label", default="control")
+    de.add_argument("--quiet", action="store_true")
     de.set_defaults(func=cmd_de)
 
     lst = sub.add_parser("list", help="list available building blocks")

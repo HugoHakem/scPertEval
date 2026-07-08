@@ -29,6 +29,7 @@ def _bds_per_pert(raws, p):
     return float(wins)
 
 
+#: ``{name: Calibrator}`` dict — ``drf`` and ``bds`` for calibration mode, ``score`` for prediction-scoring mode.
 CALIBRATORS = {
     "drf": Calibrator(
         "drf",

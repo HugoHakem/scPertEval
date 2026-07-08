@@ -1,4 +1,18 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Virtual-Cell-Research-Community/scPertEval/main/docs/_static/logo/scPertEval-dark-logo.svg">
+  <img alt="scPertEval" src="https://raw.githubusercontent.com/Virtual-Cell-Research-Community/scPertEval/main/docs/_static/logo/scPertEval-logo.svg" width="400">
+</picture>
+
 # scPertEval — Evaluation Protocols for Perturbation Sequencing
+
+[![Stars][stars-badge]][stars-link]
+[![PyPI][pypi-badge]][pypi-link]
+[![PyPI Downloads][pepy-badge]][pepy-link]
+[![Docs][docs-badge]][docs-link]
+[![Lint][lint-badge]][lint-link]
+[![Test][test-badge]][test-link]
+[![Build][build-badge]][build-link]
+[![Codecov][codecov-badge]][codecov-link]
 
 scPertEval is a command-line tool for **experimenting with and sharing reference implementations of
 evaluation protocols** in single-cell perturbation studies. The same catalog of protocols backs
@@ -41,3 +55,20 @@ Sample datasets are available at
 ---
 
 **Contributing:** see [CONTRIBUTORS.md](CONTRIBUTORS.md).
+
+[stars-badge]: https://img.shields.io/github/stars/Virtual-Cell-Research-Community/scPertEval?style=flat&logo=GitHub&color=yellow
+[stars-link]: https://github.com/Virtual-Cell-Research-Community/scPertEval/stargazers
+[pypi-badge]: https://img.shields.io/pypi/v/scperteval.svg
+[pypi-link]: https://pypi.org/project/scperteval
+[pepy-badge]: https://static.pepy.tech/badge/scperteval
+[pepy-link]: https://pepy.tech/project/scperteval
+[docs-badge]: https://readthedocs.org/projects/scperteval/badge/?version=latest
+[docs-link]: https://scperteval.readthedocs.io/
+[lint-badge]: https://github.com/Virtual-Cell-Research-Community/scPertEval/actions/workflows/lint.yaml/badge.svg
+[lint-link]: https://github.com/Virtual-Cell-Research-Community/scPertEval/actions/workflows/lint.yaml
+[test-badge]: https://github.com/Virtual-Cell-Research-Community/scPertEval/actions/workflows/test.yaml/badge.svg
+[test-link]: https://github.com/Virtual-Cell-Research-Community/scPertEval/actions/workflows/test.yaml
+[build-badge]: https://github.com/Virtual-Cell-Research-Community/scPertEval/actions/workflows/build.yaml/badge.svg
+[build-link]: https://github.com/Virtual-Cell-Research-Community/scPertEval/actions/workflows/build.yaml
+[codecov-badge]: https://codecov.io/gh/Virtual-Cell-Research-Community/scPertEval/branch/main/graph/badge.svg
+[codecov-link]: https://codecov.io/gh/Virtual-Cell-Research-Community/scPertEval

@@ -75,6 +75,13 @@ TABLE = [
     Protocol("de_auroc", M.de_auroc, representation="de", **_DE),
     Protocol("de_overlap_k", M.de_overlap, representation="de", param=overlap_k, **_DE),
 ]
+"""Every registered :class:`~scperteval.types.Protocol`, one row per protocol.
+
+To add a protocol, write a metric in ``metrics.py`` and add one row here.
+"""
 
 PROTOCOLS = {p.name: p for p in TABLE}
+"""``{name: Protocol}`` — fast lookup for the CLI's ``-p <name>`` and ``scperteval list protocols``."""
+
 GROUPS = sorted({p.group for p in TABLE})
+"""Sorted protocol group names (e.g. ``"pseudobulk"``, ``"distributional"``, ``"de"``), selectable as ``-p <group>``."""

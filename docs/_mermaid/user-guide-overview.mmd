@@ -1,0 +1,19 @@
+flowchart TD
+    DATA[Preprocessed dataset<br/>.h5ad] --> MODE{What are you trying to do?}
+    PREDS[Model predictions<br/>.h5ad] --> SCORE
+
+    MODE -->|"compare predictions<br/>to real cells"| SCORE[Scoring mode]
+    MODE -->|"test whether a protocol<br/>tells signal from noise"| CAL[Calibration mode]
+
+    SCORE --> PROTO[Protocol]
+    CAL --> PROTO
+
+    PROTO --> OUT(["Per-perturbation score<br/>scores.csv"])
+
+    classDef mode  fill:#dbeafe,stroke:#3b82f6,color:#1e3a5f
+    classDef io    fill:#f1f5f9,stroke:#94a3b8,color:#1e293b
+    classDef proto fill:#fce7f3,stroke:#ec4899,color:#831843
+
+    class SCORE,CAL mode
+    class DATA,PREDS,OUT io
+    class PROTO proto

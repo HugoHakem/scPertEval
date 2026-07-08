@@ -1,8 +1,15 @@
-"""Differential-expression backends sharing one DEResult interface.
+"""Differential-expression backends sharing one :class:`~scperteval.types.DEResult` interface.
 
-A DE method maps (target cells, reference cells) -> DEResult. The t-test is
-expressed through reusable ``moments`` / ``ttest_from_moments`` helpers so the
-context can cache a shared reference's moments and combine them cheaply.
+Each backend maps ``(target_cells, reference_cells) → DEResult``. Three backends are
+registered in :data:`DE_METHODS`:
+
+- ``"t-test"`` — Welch's t-test, default and fastest (:func:`de_ttest`).
+- ``"t-test_overestim_var"`` — :func:`scanpy.tl.rank_genes_groups`'s conservative variant
+  (:func:`de_ttest_overestim`).
+- ``"MWU"`` — Mann-Whitney U via illico; score is Cliff's delta (:func:`de_mwu`).
+
+The t-test family is factored through :func:`ttest_from_moments` so the
+runner can cache a shared reference's moments and reuse them cheaply across perturbations.
 """
 
 from __future__ import annotations
@@ -32,7 +39,7 @@ Then ``--de-method my_test`` routes every DE-dependent unit through it.
 """
 
 
-def moments(X):
+def _moments(X):
     r"""Per-gene mean, sample variance, and cell count for a cell matrix.
 
     Sparse- and dense-aware; uses :math:`\text{Var}(X) = E[X^2] - E[X]^2`
@@ -93,7 +100,7 @@ def bh(pvalue: np.ndarray) -> np.ndarray:
 
 
 def ttest_from_moments(mt, vt, nt, mr, vr, nr) -> DEResult:
-    """Welch's t-test from pre-computed per-gene moments (scanpy convention).
+    """Welch's t-test from pre-computed per-gene moments (:func:`scanpy.tl.rank_genes_groups`'s convention).
 
     Accepts moments directly so the context can cache the reference's moments
     once and combine them cheaply for every perturbation. The ``score`` field
@@ -132,7 +139,7 @@ def ttest_from_moments(mt, vt, nt, mr, vr, nr) -> DEResult:
 @DE_METHODS.register("t-test", description="Welch's t-test (default) — moment-based and fast")
 def de_ttest(target, reference) -> DEResult:
     """Welch's t-test between target and reference cell matrices."""
-    return ttest_from_moments(*moments(target), *moments(reference))
+    return ttest_from_moments(*_moments(target), *_moments(reference))
 
 
 @DE_METHODS.register(
@@ -141,15 +148,15 @@ def de_ttest(target, reference) -> DEResult:
     "target's cell count (selectable backend; not used by any current protocol)",
 )
 def de_ttest_overestim(target, reference) -> DEResult:
-    """Scanpy ``rank_genes_groups(method='t-test_overestim_var')``.
+    """:func:`scanpy.tl.rank_genes_groups` with ``method='t-test_overestim_var'``.
 
     Identical to Welch's t-test except the reference group's cell count is replaced by the
     target's, which inflates the reference standard-error term ("overestimating" its variance
     for small target groups) and yields a more conservative statistic. Selectable as a DE
     backend (``--de-method``/``--methods``); no current protocol uses it.
     """
-    mt, vt, nt = moments(target)
-    mr, vr, _nr = moments(reference)
+    mt, vt, nt = _moments(target)
+    mr, vr, _nr = _moments(reference)
     return ttest_from_moments(mt, vt, nt, mr, vr, nt)
 
 

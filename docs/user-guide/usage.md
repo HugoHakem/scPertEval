@@ -131,7 +131,7 @@ scperteval list protocols        # also: de-methods | spaces | sources | calibra
 
 - `t-test` (default, Welch's, moment-based)
 - `MWU` (Cliff's δ via illico)
-- `t-test_overestim_var` (scanpy's conservative-variance variant — the reference variance is scaled by the target's cell count).
+- `t-test_overestim_var` ({func}`scanpy.tl.rank_genes_groups`'s conservative-variance variant — the reference variance is scaled by the target's cell count).
 
 Select one with `--de-method` for a `calibrate`/`score`, or list several with `--methods` for a `de` export. The
 overestim variant is a selectable backend for new protocols; no current protocol uses it.

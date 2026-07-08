@@ -16,7 +16,11 @@ sys.path.insert(0, str(HERE / "extensions"))
 
 info = metadata("scperteval")
 project = info["Name"]
-author = info.get("Author") or "scPertEval authors"
+_credited = (
+    (info.get_all("Author") or []) + (info.get_all("Maintainer") or []) + (info.get_all("Maintainer-email") or [])
+)
+_names = dict.fromkeys(entry.split("<")[0].strip() for entry in _credited)
+author = ", ".join(_names) or "scPertEval authors"
 copyright = f"{datetime.now():%Y}, {author}"
 version = info["Version"]
 _project_urls = info.get_all("Project-URL") or []
@@ -50,6 +54,7 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinxcontrib.bibtex",
     "sphinxcontrib.katex",
+    "sphinxcontrib.mermaid",
     "sphinx_autodoc_typehints",
     "sphinx_design",
     "IPython.sphinxext.ipython_console_highlighting",
@@ -75,9 +80,11 @@ myst_enable_extensions = [
     "html_admonition",
 ]
 myst_url_schemes = ("http", "https", "mailto")
+mermaid_d3_zoom = True
 nb_output_stderr = "remove"
 nb_execution_mode = "off"
 nb_merge_streams = True
+nb_render_markdown_format = "myst"
 typehints_defaults = "braces"
 always_use_bars_union = True
 
@@ -96,20 +103,27 @@ intersphinx_mapping = {
     "sklearn": ("https://scikit-learn.org/stable/", None),
 }
 
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "**.ipynb_checkpoints", "notebooks/README.md"]
+exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "**.ipynb_checkpoints"]
 
 # -- Options for HTML output -------------------------------------------------
 
 html_theme = "sphinx_book_theme"
 html_static_path = ["_static"]
 html_css_files = ["css/custom.css"]
+html_favicon = "_static/logo/scPertEval-favicon.svg"
 
 html_title = project
 
 html_theme_options = {
+    "logo": {
+        "image_light": "_static/logo/scPertEval-logo.svg",
+        "image_dark": "_static/logo/scPertEval-dark-logo.svg",
+    },
     "repository_url": repository_url,
+    "repository_branch": "main",
     "use_repository_button": True,
     "path_to_docs": "docs/",
+    "launch_buttons": {"colab_url": "https://colab.research.google.com"},
     "navigation_with_keys": False,
     "show_navbar_depth": 1,
 }

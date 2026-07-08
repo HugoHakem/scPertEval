@@ -1,0 +1,89 @@
+flowchart TD
+    subgraph GCS["gs://scperteval/processed/"]
+        D1[replogle22k562]
+        D2[replogle22rpe1]
+        D3[nadig25hepg2]
+        D4[nadig25jurkat]
+        D5[wessels23]
+        D6[arch1]
+        D7[kaden25rpe1]
+    end
+
+    GCS --> DS[Dataset] --> CTX[Context]
+    PRED["Predictions .h5ad<br/>(--predictions, scoring mode)"] --> CTX
+
+    subgraph building_blocks[Building blocks]
+        subgraph SPACES[Spaces]
+            SP1["top_&lt;k&gt;"]
+            SP2["degs_&lt;padj&gt;"]
+            SP3["pca_&lt;k&gt;"]
+        end
+        subgraph DE[DE backends]
+            DE1[t-test]
+            DE2[t-test_overestim_var]
+            DE3[MWU]
+        end
+        subgraph SRC[Sources]
+            SRC1["gt_half · gt_all_cells<br/>(ground truth)"]
+            SRC2[control]
+            SRC3[prediction]
+            SRC4[tech_dup]
+            SRC5[all_perturbed]
+            SRC6[all_perturbed_mean]
+            SRC7[global_mean]
+            SRC8[interpolated]
+        end
+    end
+    building_blocks --> CTX
+
+    subgraph CFG[RunConfig]
+        CFG1[protocols]
+        CFG2[de_method]
+        CFG3["truth / predictions"]
+    end
+    CFG --> CTX
+
+    subgraph P[Protocol]
+        P1[metric function]
+        P2["representation: centroid · population · de"]
+        P3["scope: perturbation · dataset"]
+    end
+    P --> RUN[run_protocol]
+    CTX --> RUN
+
+    subgraph CAL[Calibrator]
+        CAL1[drf]
+        CAL2[bds]
+        CAL3[score]
+    end
+    CAL --> RUN
+
+    RUN --> SCORES([scores.csv])
+    CTX --> DEEXPORT[compute_de_export] --> DEOUT([de.h5])
+
+    classDef spaces   fill:#dbeafe,stroke:#3b82f6,color:#1e3a5f
+    classDef de       fill:#dcfce7,stroke:#22c55e,color:#14532d
+    classDef sources  fill:#fef9c3,stroke:#eab308,color:#713f12
+    classDef cal      fill:#f3e8ff,stroke:#a855f7,color:#3b0764
+    classDef io       fill:#f1f5f9,stroke:#94a3b8,color:#1e293b
+    classDef dataset  fill:#ccfbf1,stroke:#0d9488,color:#134e4a
+    classDef cfg      fill:#fff7ed,stroke:#f97316,color:#7c2d12
+    classDef proto    fill:#fce7f3,stroke:#ec4899,color:#831843
+
+    class SP1,SP2,SP3 spaces
+    class DE1,DE2,DE3 de
+    class SRC1,SRC2,SRC3,SRC4,SRC5,SRC6,SRC7,SRC8 sources
+    class CAL1,CAL2,CAL3 cal
+    class DS,CTX,RUN,SCORES,DEOUT,PRED,DEEXPORT io
+    class D1,D2,D3,D4,D5,D6,D7 dataset
+    class CFG1,CFG2,CFG3 cfg
+    class P1,P2,P3 proto
+
+    style GCS             fill:#f0fdfa,stroke:#5eead4
+    style SPACES          fill:#eff6ff,stroke:#93c5fd
+    style DE              fill:#f0fdf4,stroke:#86efac
+    style SRC             fill:#fefce8,stroke:#fde047
+    style CAL             fill:#faf5ff,stroke:#d8b4fe
+    style CFG             fill:#fff7ed,stroke:#fed7aa
+    style P               fill:#fdf2f8,stroke:#f9a8d4
+    style building_blocks fill:#f8fafc,stroke:#cbd5e1

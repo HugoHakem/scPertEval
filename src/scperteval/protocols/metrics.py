@@ -1,16 +1,23 @@
-r"""Evaluation-protocol metrics — the exact implementation of every metric.
+r"""Evaluation-protocol metrics — pure functions, one per protocol.
 
-A metric takes the ground-truth and a prediction (whichever control is being scored) plus
-the context, and returns a score. The protocol's ``representation`` sets each datapoint's
-shape — ``centroid`` -> a 1-D pseudobulk vector, ``population`` -> a (cells x genes) array,
-``de`` -> a DEResult (GT) / \|score\| ranking (prediction). Its ``scope`` sets the call: a
-``perturbation``-scope metric gets one perturbation's (gt, prediction) and returns a scalar;
-a ``dataset``-scope metric gets the list of every perturbation's gt and prediction and
-returns one score per perturbation (e.g. ``rank_retrieval``).
+Each metric receives ``(gt, prediction, ctx)`` and returns a scalar score:
 
-Every metric is implemented in full here; only external numerical libraries (numpy,
-scikit-learn, geomloss) are relied upon. So a metric is completely defined by its function
-below plus its row in ``table.py`` — nothing is hidden behind another layer.
+- ``gt`` — ground-truth datapoint (representation-dependent, see below).
+- ``prediction`` — the control or predicted datapoint in the same format as ``gt``.
+- ``ctx`` — :class:`~scperteval.context.Context` providing dataset access and cached computations.
+
+Two protocol fields control what the metric receives:
+
+**representation** — the shape of each datapoint:
+
+- ``"centroid"`` — 1-D pseudobulk vector, shape ``(G,)``.
+- ``"population"`` — cell matrix, shape ``(n, G)``.
+- ``"de"`` — :class:`~scperteval.types.DEResult` for ground truth; \|score\| ranking for predictions.
+
+**scope** — how many perturbations the metric sees at once:
+
+- ``"perturbation"`` (default) — called once per perturbation; returns a scalar.
+- ``"dataset"`` — called once with every perturbation's ``(gt, prediction)``; returns one score per perturbation (e.g. :func:`rank_retrieval`).
 """
 
 from __future__ import annotations

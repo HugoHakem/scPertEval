@@ -8,6 +8,10 @@ version = "0.1.0"
 description = "Evaluation Protocols for Perturbation Studies: per-metric DRF/BDS calibration on a single preprocessed dataset."
 readme = "README.md"
 license = { file = "LICENSE" }
+maintainers = [
+  { name = "Zach Boldyga" },
+  { name = "Hugo Hakem", email = "hakem@ebi.ac.uk" },
+]
 authors = [
   { name = "Zach Boldyga" },
 ]
@@ -40,12 +44,17 @@ scripts.scperteval = "scperteval.cli:main"
 dev = [
   { include-group = "docs" },
   { include-group = "lint" },
+  { include-group = "notebook" },
   { include-group = "test" },
+]
+test = [
+  "pytest",
 ]
 docs = [
   "ipykernel",
   "ipython",
   "myst-nb>=1.1",
+  "nbconvert",
   "pandas",
   "sphinx>=8.1",
   "sphinx-autobuild>=2025.8.25",
@@ -55,6 +64,7 @@ docs = [
   "sphinx-design",
   "sphinxcontrib-bibtex>=1",
   "sphinxcontrib-katex",
+  "sphinxcontrib-mermaid",
   "sphinxext-opengraph",
 ]
 lint = [
@@ -62,12 +72,14 @@ lint = [
   "pyright",
   "ruff",
 ]
-test = [
-  "pytest",
+notebook = [
+  "ipykernel",
+  "jupyter-server",
 ]
 
 [tool.hatch]
 build.targets.wheel.packages = [ "src/scperteval" ]
+envs.hatch-test.matrix = [ { python = [ "3.11", "3.12", "3.13", "3.14" ] } ]
 
 [tool.ruff]
 target-version = "py311"

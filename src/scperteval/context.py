@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from .blocks.de import DE_METHODS, moments, ttest_from_moments
+from .blocks.de import DE_METHODS, _moments, ttest_from_moments
 from .blocks.spaces import SPACES
 from .dataset import Dataset, to_dense
 from .reference import Reference
@@ -36,16 +36,6 @@ class Context:
     cfg : ~scperteval.types.RunConfig
         Resolved run options (DE method, subsample size, seed, …).
 
-    Attributes
-    ----------
-    ds : ~scperteval.dataset.Dataset
-        The underlying dataset.
-    cfg : ~scperteval.types.RunConfig
-        The resolved run configuration.
-    perturbations : list of str
-        Names of all perturbations that passed the ``min_cells`` filter.
-    current_pert : str or None
-        Thread-local name of the perturbation currently being processed.
     """
 
     def __init__(self, dataset: Dataset, cfg: RunConfig):
@@ -156,7 +146,7 @@ class Context:
             return self._reference_moments(pert)
         key = self._mom_key(source, pert)
         if key not in self._mom:
-            self._mom[key] = moments(self._de_cells(source, pert))
+            self._mom[key] = _moments(self._de_cells(source, pert))
         return self._mom[key]
 
     def _de_cells(self, source, pert):
