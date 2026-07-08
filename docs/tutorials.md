@@ -8,7 +8,12 @@ to add one.
 :maxdepth: 1
 
 notebooks/01_cli_walkthrough
+notebooks/02_preparing_a_dataset
 ```
+
+- **CLI walkthrough** — run scPertEval end-to-end on a tiny synthetic dataset.
+- **Preparing a dataset** — turn a raw perturb-seq `.h5ad` into scPertEval-ready form, worked
+  through three real datasets. This notebook downloads large real files, so it is not run in CI.
 
 More coming soon:
 
