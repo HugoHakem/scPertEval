@@ -62,6 +62,44 @@ def run_protocol(p: Protocol, ctx, calibrator: Calibrator):
     return run(p, ctx, calibrator, needed)
 
 
+def run_all(cfg, protocols, ctx):
+    """Run every protocol over the dataset and collect results (no printing or file I/O).
+
+    Selects the calibrator from ``cfg.output``, warms the context once over *all* protocols
+    (so shared singletons are precomputed before the parallel loop), then runs each protocol.
+    Shared by the CLI's ``calibrate``/``score`` commands and the Python API.
+
+    Parameters
+    ----------
+    cfg : ~scperteval.types.RunConfig
+        Resolved run options; ``cfg.output`` selects the calibrator.
+    protocols : list of ~scperteval.types.Protocol
+        The concrete protocols to evaluate.
+    ctx : ~scperteval.context.Context
+        Per-run context (in ``score`` mode its ``predictions`` must already be attached).
+
+    Returns
+    -------
+    aggregates : dict
+        ``{protocol_name: aggregate_dict}`` across perturbations.
+    rows : list of dict
+        Per-perturbation records for every protocol (raw controls + calibrated score).
+    timed : list of tuple
+        ``(protocol, seconds)`` wall-clock timing for each protocol.
+    """
+    from .calibrators import CALIBRATORS
+
+    calibrator = CALIBRATORS[cfg.output]
+    ctx.warm(protocols)
+    aggregates, rows, timed = {}, [], []
+    for p in protocols:
+        agg, proto_rows, seconds = run_protocol(p, ctx, calibrator)
+        aggregates[p.name] = agg
+        rows += proto_rows
+        timed.append((p, seconds))
+    return aggregates, rows, timed
+
+
 def _finalize(p, calibrator, perts, raws_list):
     """Per-perturbation rows + the aggregate, from each perturbation's raw control values."""
     per_pert = [calibrator.per_pert(raws, p) for raws in raws_list]

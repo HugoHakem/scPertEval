@@ -12,46 +12,11 @@ from .calibrators import CALIBRATORS
 from .context import Context
 from .dataset import Dataset
 from .predictions import PredictionSet
-from .protocols.table import GROUPS, PROTOCOLS, TABLE
-from .runner import compute_de_export, run_protocol
+from .protocols.resolve import _concrete, _resolve_token, resolve_protocols  # noqa: F401 (re-exported)
+from .protocols.table import TABLE
+from .runner import compute_de_export, run_all
 from .sources import SOURCES
-from .types import Protocol, RunConfig
-
-
-def _concrete(p: Protocol) -> Protocol:
-    """A tunable protocol at its default value; a fixed protocol unchanged."""
-    return p.resolve(p.param.default) if p.parameterised else p  # type: ignore[union-attr]
-
-
-def _resolve_token(token: str) -> list[Protocol]:
-    if token == "all":
-        return [_concrete(p) for p in TABLE]
-    if token in GROUPS:
-        return [_concrete(p) for p in TABLE if p.group == token]
-    if "=" in token:  # a tunable protocol with a value, e.g. mse_top_k=30
-        name, _, value = token.partition("=")
-        p = PROTOCOLS.get(name)
-        if p is None or not p.parameterised:
-            raise SystemExit(f"unknown tunable protocol {name!r}; try `scperteval list protocols`")
-        return [p.resolve(p.param.cast(value))]  # type: ignore[union-attr]
-    p = PROTOCOLS.get(token)
-    if p is None:
-        raise SystemExit(f"unknown protocol {token!r}; try `scperteval list protocols`")
-    return [_concrete(p)]
-
-
-def resolve_protocols(specs: list[str]) -> list[Protocol]:
-    """Resolve CLI protocol specs to a de-duplicated list of concrete protocols."""
-    out: list[Protocol] = []
-    for spec in specs:
-        for token in spec.split(","):
-            token = token.strip()
-            if token:
-                out += _resolve_token(token)
-    by_name: dict[str, Protocol] = {}
-    for p in out:
-        by_name.setdefault(p.name, p)
-    return list(by_name.values())
+from .types import RunConfig
 
 
 def _evaluate(cfg: RunConfig, protocols, ctx, quiet: bool) -> None:
@@ -60,18 +25,11 @@ def _evaluate(cfg: RunConfig, protocols, ctx, quiet: bool) -> None:
     Shared by ``calibrate`` and ``score`` (prediction vs ground truth); they differ only in
     how ``ctx`` is built and which calibrator ``cfg.output`` selects.
     """
-    calibrator = CALIBRATORS[cfg.output]
-    ctx.warm(protocols)
-    aggregates, rows, timed = {}, [], []
-    for p in protocols:
-        agg, proto_rows, seconds = run_protocol(p, ctx, calibrator)
-        aggregates[p.name] = agg
-        rows += proto_rows
-        timed.append((p, seconds))
+    aggregates, rows, timed = run_all(cfg, protocols, ctx)
     if not quiet:
-        io._print_summary(cfg, aggregates, calibrator, protocols)
+        io._print_summary(cfg, aggregates, CALIBRATORS[cfg.output], protocols)
     stamp = datetime.now().strftime("%Y-%m-%dT%H%M%S")
-    path = io._write_rows(cfg, rows, stamp)
+    path = io.write_rows(cfg, rows, stamp)
     print(f"-> {path}")
     if cfg.profile:
         print(f"-> {io._write_timing(cfg, timed, stamp)}")
@@ -145,7 +103,7 @@ def cmd_de(args) -> None:
     ctx._ensure_ref_sums()
     results = compute_de_export(ctx, methods)
     stamp = datetime.now().strftime("%Y-%m-%dT%H%M%S")
-    path = io._write_de(cfg, ctx.ds.var_names, ctx.perturbations, results, stamp)
+    path = io.write_de(cfg, ctx.ds.var_names, ctx.perturbations, results, stamp)
     if not args.quiet:
         print(f"-> {path}  ({len(ctx.perturbations)} perturbations, methods={methods})")
 
@@ -269,4 +227,7 @@ def main(argv=None) -> None:
     lst.set_defaults(func=cmd_list)
 
     args = parser.parse_args(argv)
-    args.func(args)
+    try:
+        args.func(args)
+    except ValueError as e:  # e.g. an unknown protocol spec — a clean CLI error, not a traceback
+        raise SystemExit(str(e)) from e
