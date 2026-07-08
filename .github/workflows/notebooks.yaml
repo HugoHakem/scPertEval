@@ -23,4 +23,15 @@ jobs:
         # Docs render the committed (already-executed) notebooks, so re-run them here to
         # catch a tutorial that no longer runs against the current API. Output is discarded:
         # this only checks that the notebook still executes, not that its values match.
-        run: uv run jupyter nbconvert --to notebook --execute --stdout docs/notebooks/*.ipynb > /dev/null
+        #
+        # Notebooks that download large real datasets (hundreds of MB to GBs) are skipped here
+        # via SKIP — they are executed by hand and committed with their outputs.
+        run: |
+          SKIP="02_preparing_a_dataset.ipynb"
+          for nb in docs/notebooks/*.ipynb; do
+            case " $SKIP " in
+              *" $(basename "$nb") "*) echo "skipping $nb (downloads large datasets; not run in CI)"; continue;;
+            esac
+            echo "executing $nb"
+            uv run jupyter nbconvert --to notebook --execute --stdout "$nb" > /dev/null
+          done
