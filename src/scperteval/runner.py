@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from time import perf_counter
 
 import numpy as np
+from threadpoolctl import threadpool_limits
 
 from .sources import SOURCES
 from .types import Calibrator, Protocol
@@ -90,7 +91,11 @@ def run_all(cfg, protocols, ctx):
     from .calibrators import CALIBRATORS
 
     calibrator = CALIBRATORS[cfg.output]
-    ctx.warm(protocols)
+    # nothing else is running yet to oversubscribe, unlike the per-perturbation loop below
+    # (which is why scperteval otherwise pins BLAS/OpenMP to 1 thread, see __init__.py) -- so
+    # warm()'s precompute can safely use more than one
+    with threadpool_limits(limits=_n_workers(cfg)):
+        ctx.warm(protocols)
     aggregates, rows, timed = {}, [], []
     for p in protocols:
         agg, proto_rows, seconds = run_protocol(p, ctx, calibrator)
