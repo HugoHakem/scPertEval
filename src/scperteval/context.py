@@ -305,10 +305,16 @@ class Context:
         needs many cells to be stable.
         """
         from sklearn.decomposition import PCA
+        from threadpoolctl import threadpool_limits
+
+        from .runner import _n_workers
 
         n = self.ds.adata.n_obs
         idx = np.arange(n)
         if n > self.PCA_FIT_CAP:
             idx = np.sort(np.random.default_rng(self.cfg.seed).choice(n, self.PCA_FIT_CAP, replace=False))
         X = to_dense(self.ds.adata.X[idx]).astype(np.float64)
-        return PCA(n_components=min(n_components, *X.shape), random_state=self.cfg.seed).fit(X)
+        # sklearn's bundled BLAS/OpenMP only loads with the import above, after run_all()'s own
+        # threadpool_limits already scanned -- re-scan here so it's actually caught and capped
+        with threadpool_limits(limits=_n_workers(self.cfg)):
+            return PCA(n_components=min(n_components, *X.shape), random_state=self.cfg.seed).fit(X)
