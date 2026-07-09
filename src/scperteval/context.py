@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from .blocks.de import DE_METHODS, _moments, ttest_from_moments
+from .blocks.de import mejia_weights as _mejia_weights
 from .blocks.spaces import SPACES
 from .dataset import Dataset, to_dense
 from .reference import Reference
@@ -160,14 +161,10 @@ class Context:
     def _mom_key(source, pert):
         return source if source == "control" else (source, pert)
 
-    def wmse_weights(self, pert):
+    def mejia_weights(self, pert):
         """Mejia DEG weights: min-max normalised absolute effect size of GT vs the reference."""
         if pert not in self._weights:
-            s = np.abs(self.de(pert, self.cfg.truth, "all_perturbed").score)
-            finite = np.isfinite(s)
-            lo, hi = s[finite].min(), s[finite].max()
-            w = (s - lo) / (hi - lo) if hi > lo else np.zeros_like(s)
-            self._weights[pert] = np.nan_to_num(w, nan=0.0)
+            self._weights[pert] = _mejia_weights(self.de(pert, self.cfg.truth, "all_perturbed").score)
         return self._weights[pert]
 
     # -- the all-perturbed reference: one sample, served leave-one-out -------------

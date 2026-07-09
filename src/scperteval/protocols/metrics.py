@@ -41,7 +41,7 @@ gt : numpy.ndarray
 prediction : numpy.ndarray
     Predicted pseudobulk profile, shape ``(G,)``.
 ctx : Context
-    Provides per-gene WMSE weights via ``ctx.wmse_weights``."""
+    Provides per-gene Mejia DEG weights via ``ctx.mejia_weights``."""
 
 _POPULATION = """\
 gt : numpy.ndarray
@@ -176,7 +176,7 @@ def weighted_mse(gt, prediction, ctx, exp=2.0):
     float
         Non-negative weighted MSE; 0 is perfect.
     """
-    w = ctx.wmse_weights(ctx.current_pert) ** exp
+    w = ctx.mejia_weights(ctx.current_pert) ** exp
     total = w.sum()
     w = w / total if total > 0 else np.full(w.size, 1.0 / w.size)
     return float(np.sum(w * (gt - prediction) ** 2))
