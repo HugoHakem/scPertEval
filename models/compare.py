@@ -7,7 +7,12 @@ scPertEval — see docs/user-guide/reproducing-literature-protocols.md.
 Concatenates each model's per-fold test predictions (models/data/prepare_split.py's folds) into
 one full-coverage prediction file, builds the two baselines directly from scPertEval's own
 ``Dataset`` (models/baselines/baselines.py), then reuses scPertEval's own scoring internals
-(the same code path ``scperteval score`` runs) for every (model, protocol) pair.
+(the same code path ``scperteval score`` runs) for the raw per-protocol score, and Miller et
+al. 2025's/Ahlmann-Eltze et al. 2025's own convention for the model-comparison DRF/CI/
+significance tables: the fold-scoped ``mean`` baseline as comparator for most metrics, but the
+``no_change`` (control) baseline specifically for the ``allpert``-centered "delta pert" family
+(see :func:`baseline_for`) -- not whichever native control a protocol happens to use for its
+own calibration.
 
 Run with the main project's environment, not a models/ pixi env — this needs ``scperteval``
 installed, not GEARS/scGPT/torch::
@@ -19,19 +24,29 @@ from __future__ import annotations
 
 import pickle
 import sys
-from dataclasses import replace
+from functools import partial
+from itertools import combinations
 from pathlib import Path
 
 import anndata as ad
 import numpy as np
 import pandas as pd
+from scipy import stats
+from statsmodels.stats.multitest import multipletests
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))  # baselines/ is a sibling package, not installed
 
 from baselines.baselines import BASELINES, FOLD_SCOPED_BASELINES, build_predictions  # noqa: E402
 
-from scperteval.calibrators import CALIBRATORS  # noqa: E402
+from scperteval.calibrators import (  # noqa: E402
+    CALIBRATORS,
+    _bootstrap_ci,
+    _drf_per_pert,
+    _paired_diff_per_pert,
+    _ttest_result,
+    _wilcoxon_result,
+)
 from scperteval.cli import resolve_protocols  # noqa: E402
 from scperteval.context import Context  # noqa: E402
 from scperteval.dataset import Dataset  # noqa: E402
@@ -128,68 +143,27 @@ def build_all_predictions() -> dict[str, Path]:
     return paths
 
 
-def calibration_drf(protocols) -> list[dict]:
-    """Miller et al. 2025's first question: dataset-native, model-independent metric headroom.
+def calibration_scores(protocols) -> list[dict]:
+    """Two model-independent views of whether this protocol can tell signal from noise at all.
 
-    How much headroom does each protocol's *metric* have at all on this dataset, before any
-    model is even considered? Positive/negative are the protocol's own built-in controls
-    (interpolated duplicate vs. all_perturbed_mean) — no predictions involved
-    (``scperteval calibrate``).
+    Positive/negative are the protocol's own built-in controls (interpolated duplicate vs.
+    its native negative) -- no predictions involved (``scperteval calibrate``). Both
+    calibrators use ``positive``/``negative`` role resolution identically (``"auto"``, unset by
+    this function), so one ``ctx``/warm pass covers both:
+
+    - ``drf``: Miller et al. 2025's Dynamic Range Fraction -- how much of the gap toward the
+      metric's theoretical perfect score does the positive control close, on average.
+    - ``bds``: Vollenweider & Bühlmann 2026's Bound Discrimination Score -- the fraction of
+      *individual perturbations* where the positive control actually wins. A protocol can have
+      a healthy mean/median DRF while still having a middling BDS, if the per-perturbation gap
+      is noisy rather than consistent -- DRF alone can hide that.
     """
-    cfg = RunConfig(dataset=str(RAW), protocols=[p.name for p in protocols], output="drf")
+    cfg = RunConfig(dataset=str(RAW), protocols=[p.name for p in protocols])
     ds = Dataset.load(str(RAW), cfg)
     ctx = Context(ds, cfg)
     ctx.warm(protocols)
-    calibrator = CALIBRATORS["drf"]
     rows = []
-    for p in protocols:
-        agg, _, _ = run_protocol(p, ctx, calibrator)
-        rows.append({"protocol": p.name, **agg})
-    return rows
-
-
-def score_model(pred_path: Path, protocols) -> list[dict]:
-    """Three views of one model's predictions against each protocol's own negative baseline.
-
-    ``all_perturbed_mean`` for uncentered/``ctrl``-centered protocols, ``control`` for
-    ``allpert``-centered ones — ``negative="auto"`` defers to each protocol's own wiring rather
-    than forcing one baseline on every protocol: an ``allpert``-centered protocol's own
-    ``all_perturbed_mean`` control coincides exactly with its centering reference, so the
-    "negative" raw value would be an identically-zero vector — undefined for a correlation
-    metric, since it divides by that vector's own variance:
-
-    - ``score``: the raw per-protocol value (mean/median over perturbations).
-    - ``drf``: Miller et al. 2025's *model-comparison* Dynamic Range Fraction — the same
-      ``drf`` calibrator as :func:`calibration_drf`, but with ``positive`` overridden to the
-      model's own prediction, so it answers "how much of the positive-control-vs-baseline gap
-      does this *model* close?" rather than "how much headroom does this *metric* have?".
-    - ``paired_ci``: Ahlmann-Eltze et al. 2025's bootstrap "does it outperform" question,
-      generalized by scPertEval's own ``paired_ci`` calibrator.
-    - ``ttest``/``wilcoxon``: Miller et al. 2025's paired one-sided Student t-test and Wilcoxon
-      signed-rank test. Both report a *raw* p-value; :func:`main` applies the Bonferroni
-      correction afterwards, across every (model, protocol) comparison actually run here —
-      the calibrator itself has no way to know that count.
-    """
-    base_cfg = RunConfig(
-        dataset=str(RAW),
-        protocols=[p.name for p in protocols],
-        predictions=str(pred_path),
-        truth="gt_all_cells",
-    )
-    ds = Dataset.load(str(RAW), base_cfg)
-    ctx = Context(ds, base_cfg)
-    ctx.predictions = PredictionSet.load(str(pred_path), ds, base_cfg)
-    ctx.warm(protocols)
-
-    rows = []
-    for calibrator_name, cfg in [
-        ("score", base_cfg),
-        ("drf", replace(base_cfg, output="drf", positive="prediction")),
-        ("paired_ci", replace(base_cfg, output="paired_ci", positive="prediction")),
-        ("ttest", replace(base_cfg, output="ttest", positive="prediction")),
-        ("wilcoxon", replace(base_cfg, output="wilcoxon", positive="prediction")),
-    ]:
-        ctx.cfg = cfg
+    for calibrator_name in ("drf", "bds"):
         calibrator = CALIBRATORS[calibrator_name]
         for p in protocols:
             agg, _, _ = run_protocol(p, ctx, calibrator)
@@ -197,34 +171,482 @@ def score_model(pred_path: Path, protocols) -> list[dict]:
     return rows
 
 
+def protocol_gene_counts(protocols) -> pd.DataFrame:
+    """Per-protocol number of genes contributing to its score.
+
+    Fixed-size feature spaces (``expr_<k>``, ``top_<k>``) and the unrestricted ``full`` space
+    report one constant, the same for every perturbation. DEGs-threshold spaces
+    (``degs_<padj>``) vary per perturbation -- the ground-truth DEG count at that padj differs
+    perturbation to perturbation. Continuously-weighted metrics (``wmse``/weighted Pearson/R2,
+    :func:`~scperteval.context.Context.wmse_weights`) have no hard cutoff at all, so there is no
+    literal gene count -- ``sum(weight) / max(weight)`` gives an effective one instead: since
+    weights are min-max normalised to a max of 1, this is "how many full-weight genes' worth of
+    contribution" the metric integrates over. Both variable cases are summarised by their
+    median and [P25, P75] across perturbations.
+    """
+    cfg = RunConfig(dataset=str(RAW), protocols=[p.name for p in protocols], truth="gt_all_cells")
+    ds = Dataset.load(str(RAW), cfg)
+    ctx = Context(ds, cfg)
+    ctx.warm(protocols)
+    rows = []
+    for p in protocols:
+        if isinstance(p.metric, partial) and "exp" in p.metric.keywords:
+            exp = p.metric.keywords["exp"]
+            counts = [
+                float(w.sum() / w.max()) for pert in ctx.perturbations if (w := ctx.wmse_weights(pert) ** exp).max() > 0
+            ]
+            kind = "weighted (effective)"
+        elif p.space.startswith("degs_"):
+            padj = float(p.space.split("_", 1)[1])
+            counts = [
+                float(np.sum(ctx.de(pert, cfg.truth, p.reference).pvalue_adj < padj)) for pert in ctx.perturbations
+            ]
+            kind = "DEGs (padj threshold)"
+        elif p.space == "full":
+            counts = [float(len(ds.var_names))]
+            kind = "all genes"
+        else:  # expr_<k> / top_<k> fixed-size spaces
+            counts = [float(p.space.split("_")[-1])]
+            kind = "fixed top-k"
+        arr = np.asarray(counts, dtype=float)
+        rows.append(
+            {
+                "protocol": p.name,
+                "kind": kind,
+                "n_median": float(np.median(arr)) if arr.size else float("nan"),
+                "n_p25": float(np.percentile(arr, 25)) if arr.size else float("nan"),
+                "n_p75": float(np.percentile(arr, 75)) if arr.size else float("nan"),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def per_pert_raw_scores(pred_path: Path, protocols) -> dict[str, dict[str, float]]:
+    """One prediction file's raw per-perturbation score, for every protocol.
+
+    ``{protocol_name: {perturbation: raw_value}}`` — the same ``score`` calibrator
+    ``scperteval score`` uses, but keeping the per-perturbation rows instead of only the
+    aggregate, so :func:`compare_to_baseline` can pair two prediction files' values by
+    perturbation afterwards.
+    """
+    cfg = RunConfig(
+        dataset=str(RAW),
+        protocols=[p.name for p in protocols],
+        predictions=str(pred_path),
+        truth="gt_all_cells",
+    )
+    ds = Dataset.load(str(RAW), cfg)
+    ctx = Context(ds, cfg)
+    ctx.predictions = PredictionSet.load(str(pred_path), ds, cfg)
+    ctx.warm(protocols)
+    calibrator = CALIBRATORS["score"]
+    out = {}
+    for p in protocols:
+        _, rows, _ = run_protocol(p, ctx, calibrator)
+        out[p.name] = {row["perturbation"]: row["raw_prediction"] for row in rows}
+    return out
+
+
+def score_rows(raw: dict[str, dict[str, float]], protocols) -> list[dict]:
+    """Raw per-protocol score (mean/median over perturbations) -- unaffected by baseline choice."""
+    rows = []
+    for p in protocols:
+        vals = np.asarray(list(raw[p.name].values()), dtype=float)
+        rows.append(
+            {
+                "protocol": p.name,
+                "calibrator": "score",
+                "mean": float(np.nanmean(vals)),
+                "median": float(np.nanmedian(vals)),
+            }
+        )
+    return rows
+
+
+def baseline_for(p) -> str:
+    """Which fitted baseline plays the paper's own comparator role for this protocol.
+
+    Miller et al. 2025's and Ahlmann-Eltze et al. 2025's own convention: the (fold-scoped)
+    mean baseline for most metrics, but the control baseline specifically for the
+    ``allpert``-centered "delta pert" family -- matching scPertEval's own native
+    ``p.negative`` wiring for these same protocols (``all_perturbed_mean``/``global_mean`` vs
+    ``control`` in table.py's ``_PB``/``_PB_CTRL``/``_NIR`` bundles).
+    """
+    return "no_change" if p.negative == "control" else "mean"
+
+
+def per_pert_drf(
+    model_name: str, raw: dict[str, dict[str, dict[str, float]]], protocols
+) -> dict[str, dict[str, float]]:
+    """Per-protocol, per-perturbation DRF for one model against its own baseline comparator.
+
+    ``{protocol_name: {perturbation: drf}}`` -- keyed by perturbation (unlike
+    :func:`per_pert_comparison`'s plain arrays) so DRF values can be aligned across models
+    within one perturbation, e.g. to rank models per perturbation
+    (:func:`~models.plots.compute_avg_drf_ranks`). Omits protocols where ``model_name`` *is*
+    the comparator (``model_name == baseline_for(p)``), same as :func:`per_pert_comparison`.
+    """
+    out = {}
+    for p in protocols:
+        baseline_name = baseline_for(p)
+        if model_name == baseline_name:
+            continue
+        m_scores, b_scores = raw[model_name][p.name], raw[baseline_name][p.name]
+        drf = {}
+        for pert in sorted(set(m_scores) & set(b_scores)):
+            raws = {"positive": m_scores[pert], "negative": b_scores[pert]}
+            if np.isfinite(raws["positive"]) and np.isfinite(raws["negative"]):
+                drf[pert] = _drf_per_pert(raws, p)
+        out[p.name] = drf
+    return out
+
+
+def per_pert_comparison(
+    model_name: str, raw: dict[str, dict[str, dict[str, float]]], protocols
+) -> dict[str, dict[str, np.ndarray]]:
+    """Per-protocol arrays of per-perturbation DRF and signed paired-diff vs. this model's own baseline.
+
+    ``{protocol_name: {"drf": array, "diff": array}}`` -- omits protocols where ``model_name``
+    *is* the comparator (``model_name == baseline_for(p)``, e.g. comparing the mean baseline to
+    itself is degenerate). The one place the pairing between two prediction files' raw scores
+    happens, since scPertEval's role resolution can only point ``negative`` at a dataset-native
+    source or the single loaded ``prediction`` set, never at a second prediction file.
+    :func:`compare_to_baseline` aggregates these; models/plots.py's beeswarm/heatmap figures use
+    the arrays directly instead of re-deriving them. Built on :func:`per_pert_drf` for the DRF
+    half, so both share one DRF-computation path.
+    """
+    drf_by_protocol = per_pert_drf(model_name, raw, protocols)
+    out = {}
+    for p in protocols:
+        drf = drf_by_protocol.get(p.name)
+        if drf is None:
+            continue
+        baseline_name = baseline_for(p)
+        m_scores, b_scores = raw[model_name][p.name], raw[baseline_name][p.name]
+        diff_vals = [_paired_diff_per_pert({"positive": m_scores[pert], "negative": b_scores[pert]}, p) for pert in drf]
+        out[p.name] = {"drf": np.asarray(list(drf.values()), dtype=float), "diff": np.asarray(diff_vals, dtype=float)}
+    return out
+
+
+def compare_to_baseline(model_name: str, raw: dict[str, dict[str, dict[str, float]]], protocols) -> list[dict]:
+    """One model vs. its protocols' own paper-convention comparator baseline.
+
+    DRF, bootstrap CI, paired t-test, Wilcoxon -- each protocol picks its comparator via
+    :func:`baseline_for` rather than one baseline for every protocol; see
+    :func:`per_pert_comparison` for the actual pairing.
+    """
+    per_pert = per_pert_comparison(model_name, raw, protocols)
+    rows = []
+    for p in protocols:
+        arrs = per_pert.get(p.name)
+        if arrs is None:
+            continue
+        rows.append(
+            {
+                "protocol": p.name,
+                "calibrator": "drf",
+                "mean": float(np.nanmean(arrs["drf"])),
+                "median": float(np.nanmedian(arrs["drf"])),
+            }
+        )
+        rows.append({"protocol": p.name, "calibrator": "paired_ci", **_bootstrap_ci(arrs["diff"])})
+        rows.append({"protocol": p.name, "calibrator": "ttest", **_ttest_result(arrs["diff"])})
+        rows.append({"protocol": p.name, "calibrator": "wilcoxon", **_wilcoxon_result(arrs["diff"])})
+    return rows
+
+
+def pairwise_diff(
+    model_a: str, model_b: str, raw: dict[str, dict[str, dict[str, float]]], protocols
+) -> dict[str, np.ndarray]:
+    """Per-protocol array of signed per-perturbation gaps between two models directly.
+
+    Positive means ``model_a`` wins, oriented by each protocol's own ``better`` direction (same
+    convention as ``_paired_diff_per_pert``), matched by perturbation. Unlike
+    :func:`per_pert_comparison`, neither side is routed through :func:`baseline_for` -- both
+    models are ordinary "prediction" sources here, not one baseline and one subject.
+    """
+    out = {}
+    for p in protocols:
+        a_scores, b_scores = raw[model_a][p.name], raw[model_b][p.name]
+        diffs = []
+        for pert in sorted(set(a_scores) & set(b_scores)):
+            raws = {"positive": a_scores[pert], "negative": b_scores[pert]}
+            if not (np.isfinite(raws["positive"]) and np.isfinite(raws["negative"])):
+                continue
+            diffs.append(_paired_diff_per_pert(raws, p))
+        out[p.name] = np.asarray(diffs, dtype=float)
+    return out
+
+
+def pairwise_diff_drf(
+    model_a: str, model_b: str, raw: dict[str, dict[str, dict[str, float]]], protocols
+) -> dict[str, np.ndarray]:
+    """Per-protocol array of per-perturbation DRF gaps between two candidate models.
+
+    Unlike :func:`pairwise_diff`'s raw-score gap, this divides each perturbation's raw gap by
+    that perturbation's own headroom (``perfect - baseline_raw_score``, via :func:`per_pert_drf`)
+    -- not a uniform rescaling, since the headroom varies perturbation to perturbation, so this
+    can disagree with the raw-score test about which pairs are significant. Empty for a protocol
+    where either model *is* that protocol's baseline comparator (:func:`baseline_for`), since
+    DRF isn't defined for the comparator itself.
+    """
+    drf_a, drf_b = per_pert_drf(model_a, raw, protocols), per_pert_drf(model_b, raw, protocols)
+    out = {}
+    for p in protocols:
+        da, db = drf_a.get(p.name), drf_b.get(p.name)
+        if da is None or db is None:
+            out[p.name] = np.asarray([], dtype=float)
+            continue
+        perts = sorted(set(da) & set(db))
+        out[p.name] = np.asarray([da[pert] - db[pert] for pert in perts], dtype=float)
+    return out
+
+
+def _wilcoxon_holm_from_pair_diffs(pair_diffs: dict[tuple[str, str], dict[str, np.ndarray]], protocols) -> pd.DataFrame:
+    """Two-sided Wilcoxon + Holm correction.
+
+    Shared by :func:`pairwise_wilcoxon_holm` and :func:`pairwise_wilcoxon_holm_drf` -- only the
+    per-perturbation gap they test differs.
+    """
+    rows = []
+    for p in protocols:
+        pair_rows = []
+        for (model_a, model_b), diffs_by_protocol in pair_diffs.items():
+            diffs = diffs_by_protocol[p.name]
+            diffs = diffs[np.isfinite(diffs)]
+            if diffs.size < 1 or np.all(diffs == 0):
+                statistic, pvalue = float("nan"), float("nan")
+            else:
+                statistic, pvalue = stats.wilcoxon(diffs, alternative="two-sided")
+            pair_rows.append(
+                {
+                    "protocol": p.name,
+                    "model_a": model_a,
+                    "model_b": model_b,
+                    "n": int(diffs.size),
+                    "statistic": float(statistic),
+                    "pvalue": float(pvalue),
+                }
+            )
+        pvals = np.array([r["pvalue"] for r in pair_rows])
+        finite = np.isfinite(pvals)
+        holm = np.full(pvals.shape, np.nan)
+        if finite.sum() > 0:
+            holm[finite] = multipletests(pvals[finite], method="holm")[1]
+        for r, h in zip(pair_rows, holm, strict=True):
+            r["pvalue_holm"] = float(h)
+        rows.extend(pair_rows)
+    return pd.DataFrame(rows)
+
+
+def pairwise_wilcoxon_holm(raw: dict[str, dict[str, dict[str, float]]], protocols, models: list[str]) -> pd.DataFrame:
+    """Two-sided Wilcoxon for every model pair's raw-score gap, Holm-corrected within each protocol.
+
+    Benavoli, Corani & Mangili 2016's recommended alternative to Demšar 2006's Nemenyi
+    post-hoc: pairwise Wilcoxon signed-rank tests directly on the paired per-perturbation
+    differences (Nemenyi's mean-rank comparison is under-powered and can be inconsistent),
+    corrected with Holm's step-down procedure -- uniformly more powerful than Bonferroni while
+    still controlling the family-wise error rate, with no omnibus Friedman/Nemenyi gatekeeping
+    needed first.
+
+    Blocked on *perturbations*, matching Miller et al. 2025's own Appendix H design and every
+    other paired test in this module -- not blocked on protocols: the 18 protocols are a
+    curated, correlated set rather than independent replicate "datasets", and pooling across
+    them would presuppose the one thing this whole comparison is built to show doesn't hold: a
+    stable, protocol-independent ranking. Correction is likewise scoped to one protocol's own
+    ``C(len(models), 2)`` pairs at a time, not pooled across protocols.
+    """
+    pair_diffs = {(a, b): pairwise_diff(a, b, raw, protocols) for a, b in combinations(models, 2)}
+    return _wilcoxon_holm_from_pair_diffs(pair_diffs, protocols)
+
+
+def pairwise_wilcoxon_holm_drf(
+    raw: dict[str, dict[str, dict[str, float]]], protocols, models: list[str]
+) -> pd.DataFrame:
+    """Same test as :func:`pairwise_wilcoxon_holm`, but on DRF gaps instead of raw-score gaps.
+
+    See :func:`pairwise_diff_drf` for why the two aren't equivalent. A model that is a given
+    protocol's baseline comparator is silently absent from that protocol's rows (``n=0``), same
+    as :func:`per_pert_drf`.
+    """
+    pair_diffs = {(a, b): pairwise_diff_drf(a, b, raw, protocols) for a, b in combinations(models, 2)}
+    return _wilcoxon_holm_from_pair_diffs(pair_diffs, protocols)
+
+
+def pairwise_bayes_factor(
+    raw: dict[str, dict[str, dict[str, float]]], protocols, models: list[str], n_resamples: int = 10_000, seed: int = 42
+) -> pd.DataFrame:
+    """Bootstrap "Bayes Factor" for every ordered model pair.
+
+    How robustly does A's aggregate score beat B's under resampling of the benchmark
+    perturbation set? DREAM Challenge convention for bootstrap-based leaderboard robustness (Menden et al. 2019,
+    the AstraZeneca-Sanger Drug Combination Challenge) -- despite the name, this is a purely
+    bootstrap/frequentist statistic, not a Bayesian Bayes factor. Complements rather than
+    replaces :func:`pairwise_wilcoxon_holm`: that asks whether an observed gap is distinguishable
+    from noise (a hypothesis test on the real sample); this asks how often the observed ranking
+    between two models would hold up if the 12-perturbation benchmark were resampled (a
+    robustness statement about the aggregate itself).
+
+    For each protocol and ordered pair ``(model_a, model_b)``, resamples the perturbations they
+    share with replacement -- the same draw for both models each replicate, since their scores
+    are correlated through shared perturbation difficulty (paired, like every other test in this
+    module) -- recomputes each model's resampled mean, and tallies how often ``model_a`` wins
+    (direction-aware via ``p.better``). ``bf = p_a_wins / (1 - p_a_wins)``: the odds that A's
+    resampled aggregate beats B's. ``bf > 1`` favors A, ``bf < 1`` favors B, and
+    ``bf(A, B) == 1 / bf(B, A)`` by construction (both directions are computed directly here
+    rather than derived, so floating-point agreement isn't exact but should be close).
+
+    At n=12 perturbations this estimate is itself noisy -- interpret alongside, not instead of,
+    the Wilcoxon+Holm p-values.
+
+    Also returns a Holm-corrected two-sided bootstrap p-value per unordered pair
+    (``pvalue_boot``/``pvalue_boot_holm``), so "is this pair robustly separated" can be judged on
+    the same footing as :func:`pairwise_wilcoxon_holm` -- Holm's step-down procedure is defined
+    on p-values, not odds, so BF is converted rather than thresholded directly. ``1 / (1 + BF)``
+    is the one-sided bootstrap probability that the *other* direction holds; twice the smaller of
+    the pair's two directions is the standard percentile-bootstrap two-sided p-value, then
+    Holm-corrected across the ``C(len(models), 2)`` pairs within each protocol, exactly like the
+    Wilcoxon test.
+    """
+    rng = np.random.default_rng(seed)
+    rows = []
+    for p in protocols:
+        for model_a, model_b in ((a, b) for a in models for b in models if a != b):
+            a_scores, b_scores = raw[model_a][p.name], raw[model_b][p.name]
+            perts = sorted(set(a_scores) & set(b_scores))
+            a_vals = np.asarray([a_scores[pert] for pert in perts], dtype=float)
+            b_vals = np.asarray([b_scores[pert] for pert in perts], dtype=float)
+            finite = np.isfinite(a_vals) & np.isfinite(b_vals)
+            a_vals, b_vals = a_vals[finite], b_vals[finite]
+            n = a_vals.size
+            if n < 1:
+                rows.append(
+                    {"protocol": p.name, "model_a": model_a, "model_b": model_b, "n": 0, "p_a_wins": float("nan")}
+                )
+                continue
+            idx = rng.integers(0, n, size=(n_resamples, n))
+            s_a, s_b = a_vals[idx].mean(axis=1), b_vals[idx].mean(axis=1)
+            a_wins = s_a > s_b if p.better == "higher" else s_a < s_b
+            rows.append(
+                {"protocol": p.name, "model_a": model_a, "model_b": model_b, "n": n, "p_a_wins": float(a_wins.mean())}
+            )
+    return _bayes_factor_from_win_rates(rows, protocols)
+
+
+def pairwise_bayes_factor_drf(
+    raw: dict[str, dict[str, dict[str, float]]], protocols, models: list[str], n_resamples: int = 10_000, seed: int = 42
+) -> pd.DataFrame:
+    """Same as :func:`pairwise_bayes_factor`, but on DRF instead of raw score.
+
+    See :func:`pairwise_diff_drf` for why the two aren't equivalent. DRF is already oriented
+    higher-is-better by construction, so no ``p.better`` branching is needed here (unlike the
+    raw-score version). A model that is a given protocol's baseline comparator has no DRF there
+    and is silently absent from that protocol's rows (``n=0``), same as :func:`per_pert_drf`.
+    """
+    rng = np.random.default_rng(seed)
+    drf_by_model = {m: per_pert_drf(m, raw, protocols) for m in models}
+    rows = []
+    for p in protocols:
+        for model_a, model_b in ((a, b) for a in models for b in models if a != b):
+            da, db = drf_by_model[model_a].get(p.name), drf_by_model[model_b].get(p.name)
+            perts = sorted(set(da) & set(db)) if da is not None and db is not None else []
+            n = len(perts)
+            if da is None or db is None or n < 1:
+                rows.append(
+                    {"protocol": p.name, "model_a": model_a, "model_b": model_b, "n": 0, "p_a_wins": float("nan")}
+                )
+                continue
+            a_vals = np.asarray([da[pert] for pert in perts], dtype=float)
+            b_vals = np.asarray([db[pert] for pert in perts], dtype=float)
+            idx = rng.integers(0, n, size=(n_resamples, n))
+            s_a, s_b = a_vals[idx].mean(axis=1), b_vals[idx].mean(axis=1)
+            rows.append(
+                {
+                    "protocol": p.name,
+                    "model_a": model_a,
+                    "model_b": model_b,
+                    "n": n,
+                    "p_a_wins": float((s_a > s_b).mean()),
+                }
+            )
+    return _bayes_factor_from_win_rates(rows, protocols)
+
+
+def _bayes_factor_from_win_rates(rows: list[dict], protocols) -> pd.DataFrame:
+    """Shared BF/p-value/Holm post-processing.
+
+    Used by :func:`pairwise_bayes_factor` and :func:`pairwise_bayes_factor_drf` --
+    everything after the resampling loop is identical.
+    """
+    df = pd.DataFrame(rows)
+    p_a_wins = df["p_a_wins"].to_numpy()
+    odds = np.divide(p_a_wins, 1.0 - p_a_wins, out=np.full_like(p_a_wins, np.inf), where=(1.0 - p_a_wins) != 0)
+    df["bf"] = np.where(np.isnan(p_a_wins), np.nan, odds)
+
+    df["pair_key"] = [tuple(sorted((a, b))) for a, b in zip(df["model_a"], df["model_b"], strict=True)]
+    one_sided = 1.0 / (1.0 + df["bf"])
+    df["pvalue_boot"] = (2 * one_sided.groupby([df["protocol"], df["pair_key"]]).transform("min")).clip(upper=1.0)
+
+    df["pvalue_boot_holm"] = np.nan
+    for p in protocols:
+        proto_mask = df["protocol"] == p.name
+        unique_pairs = df.loc[proto_mask, ["pair_key", "pvalue_boot"]].drop_duplicates("pair_key")
+        pvals = unique_pairs["pvalue_boot"].to_numpy()
+        finite = np.isfinite(pvals)
+        holm = np.full(pvals.shape, np.nan)
+        if finite.sum() > 0:
+            holm[finite] = multipletests(pvals[finite], method="holm")[1]
+        holm_by_pair = dict(zip(unique_pairs["pair_key"], holm, strict=True))
+        df.loc[proto_mask, "pvalue_boot_holm"] = df.loc[proto_mask, "pair_key"].map(holm_by_pair)
+    return df.drop(columns="pair_key")
+
+
 def main() -> None:
     """Build every model's/baseline's predictions, score them, and print the ranking tables."""
     protocols = resolve_protocols(PROTOCOL_SPECS)
 
+    calib = pd.DataFrame(calibration_scores(protocols))
+
     print("=== calibration DRF — metric headroom on this dataset, model-independent (Miller et al. 2025) ===")
-    calib = pd.DataFrame(calibration_drf(protocols)).set_index("protocol")[["mean", "median"]]
-    print(calib.to_string(float_format="%.3f"))
+    drf_calib = calib[calib["calibrator"] == "drf"].set_index("protocol")[["mean", "median"]]
+    print(drf_calib.to_string(float_format="%.3f"))
+
+    print(
+        "\n=== calibration BDS — fraction of perturbations the positive control wins, "
+        "model-independent (Vollenweider & Bühlmann 2026) ==="
+    )
+    bds_calib = calib[calib["calibrator"] == "bds"].set_index("protocol")[["bds"]]
+    print(bds_calib.to_string(float_format="%.3f"))
+
+    print("\n=== gene counts — how many genes each protocol's score is actually computed over ===")
+    gene_counts = protocol_gene_counts(protocols).set_index("protocol")
+    print(gene_counts.to_string(float_format="%.1f"))
 
     predictions = build_all_predictions()
-    rows = []
-    for model_name, pred_path in predictions.items():
-        for row in score_model(pred_path, protocols):
-            rows.append({"model": model_name, **row})
+    raw = {name: per_pert_raw_scores(path, protocols) for name, path in predictions.items()}
+
+    rows: list[dict] = []
+    for model_name in predictions:
+        rows.extend({"model": model_name, **row} for row in score_rows(raw[model_name], protocols))
+        rows.extend({"model": model_name, **row} for row in compare_to_baseline(model_name, raw, protocols))
     table = pd.DataFrame(rows)
 
     print("\n=== raw per-protocol score (mean/median over perturbations) ===")
-    raw = table[table["calibrator"] == "score"].pivot(index="model", columns="protocol", values="mean")
-    print(raw.to_string(float_format="%.3f"))
+    raw_pivot = table[table["calibrator"] == "score"].pivot(index="model", columns="protocol", values="mean")
+    print(raw_pivot.to_string(float_format="%.3f"))
 
-    print("\n=== model-comparison DRF vs each protocol's own negative baseline (Miller et al. 2025) ===")
+    print(
+        "\n=== model-comparison DRF vs each protocol's own comparator baseline "
+        "(mean, or control for delta-pert metrics) ==="
+    )
     drf = table[table["calibrator"] == "drf"].pivot(index="model", columns="protocol", values="mean")
     print(drf.to_string(float_format="%.3f"))
 
-    print("\n=== paired_ci vs each protocol's own negative baseline (positive = model wins) ===")
+    print("\n=== paired_ci vs each protocol's own comparator baseline (positive = model wins) ===")
     ci = table[table["calibrator"] == "paired_ci"].set_index(["protocol", "model"])[["mean", "ci_low", "ci_high"]]
     print(ci.to_string(float_format="%.3f"))
 
-    print("\n=== paired one-sided t-test / Wilcoxon vs each protocol's own negative baseline ===")
+    print("\n=== paired one-sided t-test / Wilcoxon vs each protocol's own comparator baseline ===")
     for calibrator_name in ("ttest", "wilcoxon"):
         sub = table[table["calibrator"] == calibrator_name].copy()
         n_comparisons = len(sub)  # Bonferroni: correct across every comparison run under this test
@@ -237,6 +659,20 @@ def main() -> None:
     out = HERE / "compare_results.csv"
     table.to_csv(out, index=False)
     print(f"\n-> {out}")
+
+    print("\n=== pairwise Wilcoxon + Holm — which models are directly distinguishable, per protocol ===")
+    pairwise = pairwise_wilcoxon_holm(raw, protocols, list(predictions))
+    significant = pairwise[pairwise["pvalue_holm"] < 0.05]
+    print(f"{len(significant)}/{len(pairwise)} pairwise comparisons Holm-significant at alpha=0.05")
+    print(
+        significant.set_index(["protocol", "model_a", "model_b"])[["n", "pvalue", "pvalue_holm"]].to_string(
+            float_format="%.4f"
+        )
+    )
+
+    pairwise_out = HERE / "compare_pairwise.csv"
+    pairwise.to_csv(pairwise_out, index=False)
+    print(f"\n-> {pairwise_out}")
 
 
 if __name__ == "__main__":
