@@ -11,7 +11,7 @@ Everything here wraps the same engine the CLI uses; users never need to build a
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -187,7 +187,7 @@ def calibrate(
     protocols: str | Iterable[str] = "all",
     *,
     de_method: str = "t-test",
-    output: str = "drf",
+    output: str | Iterable[str] = "drf",
     subsample: int = 8192,
     seed: int = 42,
     positive: str = "auto",
@@ -198,8 +198,8 @@ def calibrate(
     workers: int = 0,
     name: str | None = None,
     out_dir: str | Path | None = None,
-) -> EvalResult:
-    """Calibrate protocols against built-in positive/negative controls (DRF or BDS).
+) -> EvalResult | dict[str, EvalResult]:
+    """Calibrate protocols against built-in positive/negative controls (DRF or/and BDS).
 
     Parameters
     ----------
@@ -211,8 +211,10 @@ def calibrate(
         separated tokens are allowed within a string. Defaults to ``"all"``.
     de_method : str, optional
         DE backend for every DE-dependent unit (default ``"t-test"``).
-    output : {"drf", "bds"}, optional
-        Which calibrator to apply (default ``"drf"``).
+    output : {"drf", "bds"} or iterable of {"drf", "bds"}, optional
+        Which calibrator(s) to apply (default ``"drf"``). Given more than one, the dataset is
+        loaded and warmed only once and shared across every calibrator -- cheaper than calling
+        :func:`calibrate` once per calibrator, which would redundantly repeat that precompute.
     subsample, seed, positive, negative, min_cells, perturbation_key, control_label, workers
         The same knobs as the CLI; see :class:`~scperteval.types.RunConfig`.
     name : str, optional
@@ -224,11 +226,15 @@ def calibrate(
 
     Returns
     -------
-    EvalResult
-        Aggregate ``summary`` and ``per_perturbation`` tables.
+    EvalResult or dict[str, EvalResult]
+        Aggregate ``summary`` and ``per_perturbation`` tables. A single :class:`EvalResult` for
+        a single ``output``; a ``{output: EvalResult}`` dict when ``output`` is an iterable.
     """
-    if output not in ("drf", "bds"):
-        raise ValueError(f"calibrate output must be 'drf' or 'bds', not {output!r} (use score() for predictions)")
+    single = isinstance(output, str)
+    outputs: list[str] = [output] if isinstance(output, str) else list(output)
+    for o in outputs:
+        if o not in ("drf", "bds"):
+            raise ValueError(f"calibrate output must be 'drf' or 'bds', not {o!r} (use score() for predictions)")
     protos = resolve_protocols(_specs(protocols))
     cfg = RunConfig(
         dataset=_display_name(dataset, name),
@@ -238,7 +244,7 @@ def calibrate(
         seed=seed,
         positive=positive,
         negative=negative,
-        output=output,
+        output=outputs[0],
         out_dir=str(out_dir) if out_dir is not None else "results",
         workers=workers,
         perturbation_key=perturbation_key,
@@ -246,15 +252,19 @@ def calibrate(
         min_cells=min_cells,
     )
     ctx = Context(_to_dataset(dataset, cfg), cfg)
-    aggregates, rows, _ = run_all(cfg, protos, ctx)
-    if out_dir is not None:
-        io.write_rows(cfg, rows, _stamp())
-    return _eval_result(cfg, aggregates, rows, protos)
+    results = {o: run_all(replace(cfg, output=o), protos, ctx) for o in outputs}
+    eval_results = {}
+    for o, (aggregates, rows, _) in results.items():
+        o_cfg = replace(cfg, output=o)
+        if out_dir is not None:
+            io.write_rows(o_cfg, rows, _stamp())
+        eval_results[o] = _eval_result(o_cfg, aggregates, rows, protos)
+    return eval_results[outputs[0]] if single else eval_results
 
 
 def score(
     dataset: str | Path | AnnData,
-    predictions: str | Path | AnnData,
+    predictions: str | Path | AnnData | Mapping[str, str | Path | AnnData],
     protocols: str | Iterable[str] = "all",
     *,
     de_method: str = "t-test",
@@ -266,15 +276,18 @@ def score(
     workers: int = 0,
     name: str | None = None,
     out_dir: str | Path | None = None,
-) -> EvalResult:
+) -> EvalResult | dict[str, EvalResult]:
     """Score model predictions against ground truth (real cells), per protocol.
 
     Parameters
     ----------
     dataset : str or pathlib.Path or anndata.AnnData
         The ground-truth preprocessed ``.h5ad`` (or AnnData).
-    predictions : str or pathlib.Path or anndata.AnnData
-        Predicted cells — the same genes and perturbation labels as ``dataset``.
+    predictions : str or pathlib.Path or anndata.AnnData, or a mapping to one of those
+        Predicted cells — the same genes and perturbation labels as ``dataset``. Given a mapping
+        of several prediction sets (e.g. one per model, keyed by name), the dataset is loaded
+        and warmed only once and shared across every prediction set -- cheaper than calling
+        :func:`score` once per model, which would redundantly repeat that precompute.
     protocols : str or list of str, optional
         Protocol spec(s); see :func:`calibrate`. Defaults to ``"all"``.
     de_method, subsample, seed, min_cells, perturbation_key, control_label, workers
@@ -284,9 +297,15 @@ def score(
 
     Returns
     -------
-    EvalResult
-        Aggregate ``summary`` and ``per_perturbation`` tables (raw metric per perturbation).
+    EvalResult or dict[str, EvalResult]
+        Aggregate ``summary`` and ``per_perturbation`` tables (raw metric per perturbation). A
+        single :class:`EvalResult` for a single ``predictions``; a ``{name: EvalResult}`` dict
+        when ``predictions`` is a mapping.
     """
+    single = not isinstance(predictions, Mapping)
+    pred_map: dict[str, str | Path | AnnData] = (
+        dict(predictions) if isinstance(predictions, Mapping) else {"predictions": predictions}
+    )
     protos = resolve_protocols(_specs(protocols))
     cfg = RunConfig(
         dataset=_display_name(dataset, name),
@@ -304,11 +323,18 @@ def score(
     )
     ds = _to_dataset(dataset, cfg)
     ctx = Context(ds, cfg)
-    ctx.predictions = _to_predictions(predictions, ds, cfg)
-    aggregates, rows, _ = run_all(cfg, protos, ctx)
-    if out_dir is not None:
-        io.write_rows(cfg, rows, _stamp())
-    return _eval_result(cfg, aggregates, rows, protos)
+    eval_results = {}
+    for pred_name, preds in pred_map.items():
+        ctx.predictions = _to_predictions(preds, ds, cfg)
+        aggregates, rows, _ = run_all(cfg, protos, ctx)
+        if out_dir is not None:
+            # distinct filename per prediction set -- write_rows derives it from
+            # Path(cfg.dataset).stem, so strip cfg.dataset's own extension first: appending
+            # after it (".h5ad__gears") would make Path(...).stem swallow both as one suffix
+            file_cfg = cfg if single else replace(cfg, dataset=f"{Path(cfg.dataset).stem}__{pred_name}")
+            io.write_rows(file_cfg, rows, _stamp())
+        eval_results[pred_name] = _eval_result(cfg, aggregates, rows, protos)
+    return eval_results["predictions"] if single else eval_results
 
 
 def differential_expression(
