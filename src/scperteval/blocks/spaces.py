@@ -32,6 +32,13 @@ Use :meth:`~scperteval.registry.Registry.register` to add a custom space::
 
 Pass ``global_space=True`` if the transform does not depend on the perturbation
 (so it can be computed once and shared across all perturbations in a run).
+
+Embedding-style families (PCA today; learned/UMAP/scVI later) may also register an optional
+``prepare`` hook — a callable ``(ctx, names) -> None`` where ``names`` is the *set* of that
+family's requested space names in a run. :meth:`~scperteval.context.Context.warm` invokes each
+distinct hook once with all its variants, so the family can do a single shared precompute sized
+for the largest variant (e.g. fit PCA once at ``max(k)`` and slice smaller ``pca_k`` from it).
+The hook is purely an optimisation: transforms must stay correct when it never runs.
 """
 
 
@@ -129,6 +136,16 @@ def degs_space(padj: float) -> str:
     return name
 
 
+def _pca_prepare(ctx, names):
+    """Prepare hook for the ``pca_*`` family: fit PCA once at the largest k requested.
+
+    ``names`` is the set of requested ``pca_<k>`` space names; PCA components are nested,
+    so fitting at ``max(k)`` lets every smaller ``pca_k`` slice from the same fit with no refit.
+    Order-independent (a ``max`` over a set), so ``warm()`` stays deterministic.
+    """
+    ctx.pca(max(int(name.rsplit("_", 1)[1]) for name in names))
+
+
 def pca_space(k: int) -> str:
     """top-k principal components (registered on demand).
 
@@ -151,6 +168,7 @@ def pca_space(k: int) -> str:
             name,
             lambda X, ctx, pert, k=k: ctx.pca(k).transform(to_dense(X))[:, :k],
             global_space=True,
+            prepare=_pca_prepare,
             description=f"top {k} principal components (fit on the dataset)",
         )
     return name
