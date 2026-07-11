@@ -36,6 +36,21 @@ Use :meth:`~scperteval.registry.Registry.register` to add a custom backend::
         return PerturbationDEResult(statistic=statistic, pvalue=pvalue, pvalue_adj=bh(pvalue))
 
 Then ``--de-method my_test`` routes every DE-dependent unit through it.
+
+**Opting into the moment cache.** A method whose statistic is a function of per-gene
+moments (mean, sample variance, cell count) can declare a ``from_moments`` capability to
+reuse :class:`~scperteval.context.Context`'s shared moment cache — the same optimisation
+that makes ``t-test`` fast (a source's moments are computed once and the all-perturbed
+reference's are served leave-one-out). Register a second callable with the signature
+``(mean_t, var_t, n_t, mean_r, var_r, n_r) -> PerturbationDEResult``::
+
+    @DE_METHODS.register("my_moment_test", description="...", from_moments=my_from_moments)
+    def de_my_moment_test(target, reference):
+        return my_from_moments(*_moments(target), *_moments(reference))
+
+When a method provides ``from_moments`` the context dispatches through it (reading cached
+moments); otherwise it calls the registered cells-based function. The registered function
+stays the single source of truth — no method is privileged by name.
 """
 
 
@@ -136,9 +151,18 @@ def ttest_from_moments(mt, vt, nt, mr, vr, nr) -> PerturbationDEResult:
     return PerturbationDEResult(statistic=t, pvalue=pval, pvalue_adj=bh(pval))
 
 
-@DE_METHODS.register("t-test", description="Welch's t-test (default) — moment-based and fast")
+@DE_METHODS.register(
+    "t-test",
+    description="Welch's t-test (default) — moment-based and fast",
+    from_moments=ttest_from_moments,
+)
 def de_ttest(target, reference) -> PerturbationDEResult:
-    """Welch's t-test between target and reference cell matrices."""
+    """Welch's t-test between target and reference cell matrices.
+
+    Registered with a ``from_moments`` capability (:func:`ttest_from_moments`), so the
+    per-run :class:`~scperteval.context.Context` computes it from cached per-gene moments
+    instead of re-densifying cells for every comparison — see :data:`DE_METHODS`.
+    """
     return ttest_from_moments(*_moments(target), *_moments(reference))
 
 

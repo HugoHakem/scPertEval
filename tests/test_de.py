@@ -7,7 +7,7 @@ import anndata as ad
 import numpy as np
 import scanpy as sc
 
-from scperteval.blocks.de import DE_METHODS, de_ttest_overestim
+from scperteval.blocks.de import DE_METHODS, _moments, de_ttest_overestim, ttest_from_moments
 
 
 def _scanpy_overestim(Xt, Xr):
@@ -85,3 +85,60 @@ def test_overestim_var_runs_through_export_path():
     assert stat.shape == (len(ctx.perturbations), ng)
     assert padj.shape == stat.shape
     assert np.isfinite(stat).all()
+
+
+def test_ttest_declares_moment_capability():
+    """t-test carries its moment implementation as a registry capability (not a name special-case);
+    a cells-only method like MWU does not."""
+    assert DE_METHODS.meta("t-test").get("from_moments") is ttest_from_moments
+    assert DE_METHODS.meta("MWU").get("from_moments") is None
+
+
+def test_moment_capability_dispatches_through_cache():
+    """A registered moment-based method routes through Context's shared moment cache — its
+    `from_moments` is called, the cells path is not, and a source's moments are computed once
+    and reused across perturbations (no per-comparison recompute)."""
+    from scperteval.context import Context
+    from scperteval.dataset import Dataset
+    from scperteval.types import RunConfig
+
+    calls = {"from_moments": 0, "cells": 0}
+
+    def spy_from_moments(*moments):
+        calls["from_moments"] += 1
+        return ttest_from_moments(*moments)
+
+    @DE_METHODS.register("spy_moment", description="test double", from_moments=spy_from_moments)
+    def de_spy(target, reference):
+        calls["cells"] += 1
+        return spy_from_moments(*_moments(target), *_moments(reference))
+
+    try:
+        rng = np.random.default_rng(3)
+        ng = 30
+        parts, labels = [], []
+        for lab, mean, n in [("control", 1.0, 60), ("pertA", 1.5, 40), ("pertB", 0.8, 40)]:
+            parts.append(rng.poisson(mean, (n, ng)))
+            labels += [lab] * n
+        adata = ad.AnnData(np.vstack(parts).astype(np.float64))
+        adata.var_names = [f"g{i}" for i in range(ng)]
+        adata.obs["perturbation"] = labels
+        cfg = RunConfig(
+            dataset="-", protocols=[], de_method="spy_moment", subsample=200, seed=0, min_cells=10, workers=1
+        )
+        ctx = Context(Dataset(adata, cfg), cfg)
+
+        perts = ctx.perturbations
+        results = [ctx.de(p, "control", "all_perturbed") for p in perts]
+
+        # The moment capability was used for every comparison; the cells path never was.
+        assert calls["from_moments"] == len(perts)
+        assert calls["cells"] == 0
+        # The `control` source's moments were computed once and reused across perturbations.
+        assert list(ctx._mom.keys()) == ["control"]
+        # And it agrees with computing t-test directly from the same cached moments.
+        for p, de in zip(perts, results, strict=True):
+            expected = ttest_from_moments(*ctx._moments("control", p), *ctx._moments("all_perturbed", p))
+            assert np.allclose(de.statistic, expected.statistic, equal_nan=True)
+    finally:
+        DE_METHODS._items.pop("spy_moment", None)

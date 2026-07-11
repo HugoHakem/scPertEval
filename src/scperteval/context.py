@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from .blocks.de import DE_METHODS, _moments, ttest_from_moments
+from .blocks.de import DE_METHODS, _moments
 from .blocks.spaces import SPACES
 from .dataset import Dataset, to_dense
 from .reference import Reference
@@ -135,8 +135,11 @@ class Context:
         method = self.cfg.de_method
         key = (self._mom_key(source, pert), self._mom_key(reference, pert), method)
         if key not in self._de:
-            if method == "t-test":
-                self._de[key] = ttest_from_moments(*self._moments(source, pert), *self._moments(reference, pert))
+            # A method may declare a `from_moments` capability (see DE_METHODS); if it does,
+            # dispatch through the shared moment cache instead of recomputing from cells.
+            from_moments = DE_METHODS.meta(method).get("from_moments")
+            if from_moments is not None:
+                self._de[key] = from_moments(*self._moments(source, pert), *self._moments(reference, pert))
             else:
                 self._de[key] = DE_METHODS[method](self._de_cells(source, pert), self._de_cells(reference, pert))
         return self._de[key]
