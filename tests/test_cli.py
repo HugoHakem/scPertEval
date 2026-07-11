@@ -25,7 +25,7 @@ def test_score_writes_score_csv(dataset_path, dataset_adata, predictions_factory
 
 
 def test_de_writes_h5(dataset_path, tmp_path):
-    main(["de", dataset_path, "--methods", "t-test", "--out-dir", str(tmp_path), "--quiet"])
+    main(["de", dataset_path, "--method", "t-test", "--out-dir", str(tmp_path), "--quiet"])
     assert len(list(tmp_path.glob("*__de.h5"))) == 1
 
 

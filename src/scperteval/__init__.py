@@ -16,17 +16,12 @@ for _v in (
 
 if TYPE_CHECKING:  # let type checkers and IDEs see the lazily re-exported names (no runtime import)
     from .api import (
-        DEMethodResult,
-        DEResults,
+        DatasetDEResults,
         EvalResult,
-        available_calibrators,
-        available_de_methods,
-        available_protocols,
-        available_sources,
-        available_spaces,
+        Prepared,
         calibrate,
         de,
-        differential_expression,
+        prepare,
         score,
     )
 
@@ -34,18 +29,13 @@ if TYPE_CHECKING:  # let type checkers and IDEs see the lazily re-exported names
 
 #: The public Python API, re-exported from :mod:`scperteval.api`.
 __all__ = [
-    "DEMethodResult",
-    "DEResults",
+    "DatasetDEResults",
     "EvalResult",
+    "Prepared",
     "__version__",
-    "available_calibrators",
-    "available_de_methods",
-    "available_protocols",
-    "available_sources",
-    "available_spaces",
     "calibrate",
     "de",
-    "differential_expression",
+    "prepare",
     "score",
 ]
 

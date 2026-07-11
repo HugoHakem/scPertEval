@@ -36,9 +36,9 @@ def test_overestim_var_matches_scanpy():
     Xr = rng.poisson(1.3, (90, 60)).astype(np.float64)  # larger reference
     de = de_ttest_overestim(Xt, Xr)
     sc_scores, sc_pvals = _scanpy_overestim(Xt, Xr)
-    assert np.allclose(de.score, sc_scores, atol=1e-5, rtol=1e-4)
+    assert np.allclose(de.statistic, sc_scores, atol=1e-5, rtol=1e-4)
     assert np.allclose(de.pvalue, sc_pvals, atol=1e-6, rtol=1e-4)
-    assert de.pvalue_adj.shape == de.score.shape
+    assert de.pvalue_adj.shape == de.statistic.shape
 
 
 def test_overestim_var_differs_from_plain_ttest():
@@ -48,8 +48,8 @@ def test_overestim_var_differs_from_plain_ttest():
     Xr = rng.poisson(1.4, (120, 50)).astype(np.float64)
     over = de_ttest_overestim(Xt, Xr)
     plain = DE_METHODS["t-test"](Xt, Xr)
-    assert np.all(np.abs(over.score) <= np.abs(plain.score) + 1e-9)
-    assert not np.allclose(over.score, plain.score)
+    assert np.all(np.abs(over.statistic) <= np.abs(plain.statistic) + 1e-9)
+    assert not np.allclose(over.statistic, plain.statistic)
 
 
 def test_overestim_var_registered_and_selectable():
@@ -64,7 +64,7 @@ def test_overestim_var_runs_through_export_path():
     -> DE_METHODS dispatch, on a tiny in-memory dataset."""
     from scperteval.context import Context
     from scperteval.dataset import Dataset
-    from scperteval.runner import compute_de_export
+    from scperteval.runner import compute_de
     from scperteval.types import RunConfig
 
     rng = np.random.default_rng(2)
@@ -80,8 +80,8 @@ def test_overestim_var_runs_through_export_path():
         dataset="-", protocols=[], de_method="t-test_overestim_var", subsample=200, seed=0, min_cells=10, workers=1
     )
     ctx = Context(Dataset(adata, cfg), cfg)
-    out = compute_de_export(ctx, ["t-test_overestim_var"])
-    stat, padj = out["t-test_overestim_var"]
+    ctx._ensure_ref_sums()
+    stat, padj = compute_de(ctx)
     assert stat.shape == (len(ctx.perturbations), ng)
     assert padj.shape == stat.shape
     assert np.isfinite(stat).all()

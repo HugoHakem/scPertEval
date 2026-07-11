@@ -158,24 +158,20 @@ def _run_dataset(p: Protocol, ctx, calibrator: Calibrator, needed: dict):
     return agg, rows, seconds
 
 
-def compute_de_export(ctx, methods):
-    """Per-gene DE matrices for each method, for export.
+def compute_de(ctx):
+    """Per-gene DE matrices for ``ctx.cfg.de_method``, for export.
 
-    Returns ``{method: (statistic, pvalue_adj)}`` matrices (perturbations x genes) for each
-    method's ground-truth-vs-all-perturbed differential expression.
+    Returns ``(statistic, pvalue_adj)`` matrices (perturbations x genes) for the
+    ground-truth-vs-all-perturbed differential expression under the context's DE method.
     """
-    out = {}
-    for method in methods:
-        ctx.cfg.de_method = method
 
-        def work(pert):
-            de = ctx.de(pert, ctx.cfg.truth, "all_perturbed")
-            return de.score, de.pvalue_adj
+    def work(pert):
+        d = ctx.de(pert, ctx.cfg.truth, "all_perturbed")
+        return d.statistic, d.pvalue_adj
 
-        with ThreadPoolExecutor(max_workers=_n_workers(ctx.cfg)) as pool:
-            res = list(pool.map(work, ctx.perturbations))
-        out[method] = (np.vstack([r[0] for r in res]), np.vstack([r[1] for r in res]))
-    return out
+    with ThreadPoolExecutor(max_workers=_n_workers(ctx.cfg)) as pool:
+        res = list(pool.map(work, ctx.perturbations))
+    return np.vstack([r[0] for r in res]), np.vstack([r[1] for r in res])
 
 
 def _check_sources(p: Protocol, roles: dict) -> None:

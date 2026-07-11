@@ -14,7 +14,7 @@ from .dataset import Dataset
 from .predictions import PredictionSet
 from .protocols.resolve import _concrete, _resolve_token, resolve_protocols  # noqa: F401 (re-exported)
 from .protocols.table import TABLE
-from .runner import compute_de_export, run_all
+from .runner import compute_de, run_all
 from .sources import SOURCES
 from .types import RunConfig
 
@@ -85,12 +85,11 @@ def cmd_score(args) -> None:
 
 
 def cmd_de(args) -> None:
-    """Run the ``de`` command: export per-gene differential expression to HDF5."""
-    methods = [m.strip() for m in args.methods.split(",") if m.strip()]
+    """Run the ``de`` command: export per-gene differential expression for one method to HDF5."""
     cfg = RunConfig(
         dataset=args.dataset,
         protocols=[],
-        de_method=methods[0],
+        de_method=args.method,
         subsample=args.subsample,
         seed=args.seed,
         out_dir=args.out_dir,
@@ -101,11 +100,11 @@ def cmd_de(args) -> None:
     )
     ctx = Context(Dataset.load(cfg.dataset, cfg), cfg)
     ctx._ensure_ref_sums()
-    results = compute_de_export(ctx, methods)
+    statistic, pvalue_adj = compute_de(ctx)
     stamp = datetime.now().strftime("%Y-%m-%dT%H%M%S")
-    path = io.write_de(cfg, ctx.ds.var_names, ctx.perturbations, results, stamp)
+    path = io.write_de(cfg, ctx.ds.var_names, ctx.perturbations, {args.method: (statistic, pvalue_adj)}, stamp)
     if not args.quiet:
-        print(f"-> {path}  ({len(ctx.perturbations)} perturbations, methods={methods})")
+        print(f"-> {path}  ({len(ctx.perturbations)} perturbations, method={args.method})")
 
 
 def cmd_list(args) -> None:
@@ -135,8 +134,8 @@ def cmd_list(args) -> None:
     print("\n".join(lines))
 
 
-def main(argv=None) -> None:
-    """Parse arguments and dispatch to the selected subcommand."""
+def build_parser() -> argparse.ArgumentParser:
+    """Build the ``scperteval`` argument parser (extracted so tests can inspect defaults)."""
     parser = argparse.ArgumentParser(prog="scperteval", description=__doc__)
     sub = parser.add_subparsers(dest="cmd", required=True)
 
@@ -207,10 +206,13 @@ def main(argv=None) -> None:
     score.add_argument("--quiet", action="store_true")
     score.set_defaults(func=cmd_score)
 
-    de = sub.add_parser("de", help="write per-gene DE (statistic + adj p) per method to HDF5")
+    de = sub.add_parser("de", help="write per-gene DE (statistic + adj p) for one method to HDF5")
     de.add_argument("dataset", help="preprocessed .h5ad")
     de.add_argument(
-        "--methods", default="t-test,MWU", help="comma-separated DE methods to compute (GT first-half vs all-perturbed)"
+        "--method",
+        choices=DE_METHODS.names(),
+        default="t-test",
+        help="DE method to compute (GT first-half vs all-perturbed)",
     )
     de.add_argument("--subsample", type=int, default=8192)
     de.add_argument("--seed", type=int, default=42)
@@ -226,7 +228,12 @@ def main(argv=None) -> None:
     lst.add_argument("what", choices=["protocols", "de-methods", "spaces", "sources", "calibrators"])
     lst.set_defaults(func=cmd_list)
 
-    args = parser.parse_args(argv)
+    return parser
+
+
+def main(argv=None) -> None:
+    """Parse arguments and dispatch to the selected subcommand."""
+    args = build_parser().parse_args(argv)
     try:
         args.func(args)
     except ValueError as e:  # e.g. an unknown protocol spec — a clean CLI error, not a traceback

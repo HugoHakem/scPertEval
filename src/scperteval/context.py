@@ -116,7 +116,7 @@ class Context:
         return v
 
     def _de_view(self, pert, source, p):
-        """Return the DE view: the truth's DEResult, or a candidate's ``|score|`` ranking.
+        """Return the DE view: the truth's PerturbationDEResult, or a candidate's ``|statistic|`` ranking.
 
         The negative candidate is tested against ``neg_reference`` (e.g. control) rather than
         ``reference`` (the all-perturbed sample), the hybrid DE setup.
@@ -124,7 +124,7 @@ class Context:
         if source == self.cfg.truth:
             return self.de(pert, self.cfg.truth, p.reference)
         reference = p.neg_reference if (source == p.negative and p.neg_reference) else p.reference
-        return np.abs(self.de(pert, source, reference).score)
+        return np.abs(self.de(pert, source, reference).statistic)
 
     def de(self, pert, source, reference="all_perturbed"):
         """Differential expression for one (source vs reference) comparison, cached.
@@ -163,7 +163,7 @@ class Context:
     def wmse_weights(self, pert):
         """Mejia DEG weights: min-max normalised absolute effect size of GT vs the reference."""
         if pert not in self._weights:
-            s = np.abs(self.de(pert, self.cfg.truth, "all_perturbed").score)
+            s = np.abs(self.de(pert, self.cfg.truth, "all_perturbed").statistic)
             finite = np.isfinite(s)
             lo, hi = s[finite].min(), s[finite].max()
             w = (s - lo) / (hi - lo) if hi > lo else np.zeros_like(s)

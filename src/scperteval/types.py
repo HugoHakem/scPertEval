@@ -48,11 +48,11 @@ class RunConfig:
 
 
 @dataclass(frozen=True)
-class DEResult:
-    """Per-gene differential expression for one target-vs-reference comparison."""
+class PerturbationDEResult:
+    """Per-gene differential expression for one perturbation (one target-vs-reference comparison)."""
 
     #: Per-gene test statistic (e.g. t-statistic or Cliff's delta), shape ``(G,)``.
-    score: np.ndarray
+    statistic: np.ndarray
     #: Raw per-gene p-values, shape ``(G,)``.
     pvalue: np.ndarray
     #: Benjamini-Hochberg adjusted p-values, shape ``(G,)``.
@@ -87,7 +87,7 @@ class Protocol:
     receives:
 
     - ``representation`` — the shape of one perturbation's datapoint: ``"centroid"`` (a 1-D
-      pseudobulk vector), ``"population"`` (a cells × genes matrix), or ``"de"`` (a DEResult).
+      pseudobulk vector), ``"population"`` (a cells × genes matrix), or ``"de"`` (a PerturbationDEResult).
     - ``scope`` — ``"perturbation"`` (default): the metric is called once per perturbation,
       gets that perturbation's ``(gt, prediction)`` datapoints, and returns a scalar.
       ``"dataset"``: the metric is called once, gets the list of *every* perturbation's
@@ -118,7 +118,7 @@ class Protocol:
     name: str
     #: Pure metric function ``(gt, prediction, ctx) -> float``.
     metric: Callable
-    #: One of ``"centroid"`` (pseudobulk vector), ``"population"`` (cells × genes matrix), or ``"de"`` (DEResult).
+    #: One of ``"centroid"`` (pseudobulk vector), ``"population"`` (cells × genes matrix), or ``"de"`` (PerturbationDEResult).
     representation: str
     #: ``"perturbation"`` (default) or ``"dataset"`` — how many perturbations the metric sees at once.
     scope: str = "perturbation"

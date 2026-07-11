@@ -46,7 +46,7 @@ def _field(de, name):
 
 
 def register_de_space(name, field, top=None, threshold=None, description=""):
-    r"""Register a DE-derived gene subset selected from a field of the GT DEResult.
+    r"""Register a DE-derived gene subset selected from a field of the GT PerturbationDEResult.
 
     Exactly one of ``top`` (select top-k by \|value\|) or ``threshold`` (a callable
     returning a boolean mask) must be provided.
@@ -56,8 +56,8 @@ def register_de_space(name, field, top=None, threshold=None, description=""):
     name : str
         Registry key for the new space.
     field : str
-        Attribute of :class:`~scperteval.types.DEResult` to read
-        (e.g. ``"score"``, ``"pvalue_adj"``).
+        Attribute of :class:`~scperteval.types.PerturbationDEResult` to read
+        (e.g. ``"statistic"``, ``"pvalue_adj"``).
     top : int or None
         If given, keep the top-k genes by absolute value of ``field``.
     threshold : Callable or None
@@ -100,7 +100,7 @@ def top_space(k: int) -> str:
     name = f"top_{k}"
     if name not in SPACES:
         register_de_space(
-            name, field="score", top=k, description=f"top {k} genes by ground-truth effect size, per perturbation"
+            name, field="statistic", top=k, description=f"top {k} genes by ground-truth effect size, per perturbation"
         )
     return name
 
