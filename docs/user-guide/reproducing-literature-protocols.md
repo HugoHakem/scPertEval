@@ -114,13 +114,17 @@ Every row can be combined with the DRF/BDS calibration above, or scored directly
 model's predictions (`scperteval score`) — calibration and metric choice are independent axes
 of the same protocol table.
 
-**Statistical tests.** Miller et al. use three: a bootstrap 95% CI (`paired_ci`, shared with
-Ahlmann-Eltze et al. below), a paired one-sided Student t-test, and a paired one-sided Wilcoxon
-signed-rank test — the latter two now exist as the `ttest`/`wilcoxon` calibrators, each
-reporting a raw p-value. Their cross-model Bonferroni correction needs the total number of
-comparisons being run at once, which a single calibrator run has no way to know — so it's
-applied downstream, across whatever set of (model, protocol) pairs the caller is actually
-comparing (see `models/compare.py`'s worked example), not inside the calibrator itself.
+**Statistical tests.** Miller et al. use three: a bootstrap 95% CI (shared with Ahlmann-Eltze et
+al. below), a paired one-sided Student t-test, and a paired one-sided Wilcoxon signed-rank test.
+These aren't scPertEval calibrators: `--positive`/`--negative` role resolution compares one
+attached prediction (or dataset-native source) against another, but comparing several trained
+models against each other — or against a baseline that is itself a fold-scoped, trained
+prediction set rather than a dataset-native source — means pairing two independent prediction
+sets directly, which role resolution can't express. `models/compare.py`'s worked example does
+this directly instead: a two-sided Wilcoxon signed-rank test per model pair, Holm-corrected
+within each protocol (uniformly more powerful than a flat Bonferroni across every comparison,
+while still controlling the family-wise error rate), plus a bootstrap "Bayes Factor" robustness
+check (Menden et al. 2019's DREAM Challenge convention) as a complementary view.
 
 **Splitting perturbations for cross-validation.** Held-out perturbations are chosen by genuine
 5-fold cross-validation (2-fold for the double-perturbation datasets — Norman19, Wessels23, and,
@@ -169,19 +173,19 @@ bootstrap-CI comparison now exist natively:
 ```bash
 # "Pearson Delta" and l2, restricted to the top-1000 control-expressed genes
 scperteval score data.h5ad predictions.h5ad -p pearson_ctrl_expr_k=1000,l2_expr_k=1000
-
-# the bootstrap-CI "outperform" question, prediction vs. a chosen baseline source
-scperteval score data.h5ad predictions.h5ad -p pearson_ctrl_expr_k=1000 \
-  --positive prediction --negative global_mean --output paired_ci
 ```
 
 `pearson_expr_k`/`pearson_ctrl_expr_k`/`l2_expr_k` (`blocks/spaces.py`'s `expr_space`,
-`protocols/metrics.py`'s `l2`) reproduce the paper's `r2`/`r2_delta`/`l2`. The `paired_ci`
-calibrator (`calibrators.py`) reproduces the *shape* of both papers' significance question — a
-bootstrapped 95% CI on a paired per-perturbation gap — as a signed difference oriented by the
-protocol's own `better` direction, rather than Ahlmann-Eltze's specific ratio
-($\ell_2/\ell_2^{\text{mean}}$), so it applies uniformly to correlation- and error-type metrics
-alike.
+`protocols/metrics.py`'s `l2`) reproduce the paper's `r2`/`r2_delta`/`l2`. The bootstrap-CI
+"outperform" question — is a model's per-perturbation gap against a baseline distinguishable from
+zero — isn't a scPertEval calibrator here either: Ahlmann-Eltze et al.'s baselines (Mean, linear)
+are themselves fold-scoped, trained prediction sets, so comparing a model against them means
+pairing two independent prediction files, not one attached prediction against a dataset-native
+source. `models/compare.py`'s bootstrap "Bayes Factor" (Menden et al. 2019's DREAM Challenge
+convention) reproduces the *shape* of this question directly on two prediction sets' paired
+per-perturbation gap, oriented by the protocol's own `better` direction rather than
+Ahlmann-Eltze's specific ratio ($\ell_2/\ell_2^{\text{mean}}$), so it applies uniformly to
+correlation- and error-type metrics alike.
 
 The **Mean** and **linear** baselines (`models/baselines/baselines.py`'s `fold_mean_baseline`
 and `linear_baseline`, ported from const-ae/linear_perturbation_prediction-Paper's
@@ -218,12 +222,12 @@ run:
 | What the paper reports | scPertEval today |
 |---|---|
 | Miller et al.'s DRF/BDS calibration | `scperteval calibrate ... --output drf` — native |
-| Miller et al.'s model-vs-baseline ranking (their second, model-comparison DRF) | `scperteval score ... --positive prediction --output drf` — native, reusing the same `drf` calibrator (clipped to `[-1, 1]`, not cellsimbench's `[-1, 2]`) |
+| Miller et al.'s model-vs-baseline ranking (their second, model-comparison DRF) | `models/compare.py`'s `per_pert_drf`, via `scperteval.calibrators.drf_per_pert` (clipped to `[-1, 1]`, not cellsimbench's `[-1, 2]`) applied to two independently-scored (`sp.score`) prediction sets — deliberately *not* `scperteval score --positive prediction --output drf`: that would calibrate against a dataset-native control (e.g. `global_mean`) computed over the whole ground-truth file passed in, which can leak information a model's own held-out fold shouldn't see |
 | Miller et al.'s metric family — MSE/WMSE/PearsonDelta/R2Delta × all-genes/DEG/DE-weighted, plus NIR | `mse`/`mse_degs_padj`, `wmse_exp1/2/4`, `pearson_ctrl`/`pearson_pert` (+ `_degs_padj` siblings), `r2_ctrl`/`r2_pert` (+ `_degs_padj` and `weighted_..._exp2` siblings), `nir` — all native |
 | Vollenweider & Bühlmann 2026's Weighted Pearson Delta | `weighted_pearson_ctrl_exp2` / `weighted_pearson_pert_exp2` — native |
 | Ahlmann-Eltze's Pearson Delta / raw $r$ / $\ell_2$ on the top-1000 control-expressed genes | `pearson_ctrl_expr_k` / `pearson_expr_k` / `l2_expr_k` — native |
-| Both papers' bootstrap-CI "outperform" question | `scperteval score ... --positive prediction --output paired_ci` — native, as a signed paired difference rather than Ahlmann-Eltze's specific ratio |
-| Miller et al.'s paired t-test / Wilcoxon signed-rank tests | `--output ttest` / `--output wilcoxon` — native, raw p-value; Bonferroni correction is applied downstream across whichever comparisons are actually run (`models/compare.py`), not inside the calibrator |
+| Both papers' bootstrap-CI "outperform" question | `models/compare.py`'s bootstrap Bayes Factor — pairwise, on two independently-scored prediction sets (not a scPertEval calibrator: role resolution can't pair two prediction files directly) |
+| Miller et al.'s paired t-test / Wilcoxon signed-rank tests | `models/compare.py`'s pairwise two-sided Wilcoxon + Holm correction — a more powerful standard alternative to Miller et al.'s own flat Bonferroni |
 | Ahlmann-Eltze's Mean baseline (fold-scoped, not dataset-wide leave-one-out) and linear baseline (PCA + ridge bilinear regression) | `models/baselines/baselines.py`'s `fold_mean_baseline`/`linear_baseline` — implemented in the `models/` scaffold, not the protocol table (a baseline is a prediction source, like GEARS/scGPT, not a metric) |
 | The additive combinatorial baseline | not yet available — an `additive` source, built from constituent single-perturbation ground truth |
 | Miller et al.'s 5-fold perturbation CV vs. Ahlmann-Eltze's repeated random gene-holdout | neither is a protocol concern in scPertEval today — held-out perturbations come from the dataset, not the protocol table. `models/`'s own k-fold scaffold implements Miller's design (see `prepare_split.py`); scPertEval's `calibrate`/`score` modes themselves remain fold-agnostic by construction (a dataset-level diagnostic, not tied to any one model's CV loop) |

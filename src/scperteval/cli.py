@@ -67,9 +67,7 @@ def cmd_score(args) -> None:
         de_method=args.de_method,
         subsample=args.subsample,
         seed=args.seed,
-        positive=args.positive,
-        negative=args.negative,
-        output=args.output,
+        output="score",
         out_dir=args.out_dir,
         workers=args.workers,
         perturbation_key=args.perturbation_key,
@@ -131,7 +129,7 @@ def cmd_list(args) -> None:
     elif args.what == "sources":
         lines = reg(SOURCES, lambda n, m: f"{n:14s} ({m.get('provides')}) — {m.get('description', '')}")
     elif args.what == "calibrators":
-        lines = [f"{n:9s} — {c.description}" for n, c in CALIBRATORS.items()]
+        lines = [f"{n:6s} — {c.description}" for n, c in CALIBRATORS.items()]
     else:
         raise AssertionError(f"unexpected list target: {args.what!r}")
     print("\n".join(lines))
@@ -200,26 +198,6 @@ def main(argv=None) -> None:
         help="cells in the all-perturbed reference sample (the ground truth itself is never subsampled)",
     )
     score.add_argument("--seed", type=int, default=42)
-    score.add_argument(
-        "--positive",
-        default="auto",
-        help="control-role override for --output drf/bds/paired_ci — set to 'prediction' to "
-        "compare your model against --negative (ignored by the default 'score' output)",
-    )
-    score.add_argument(
-        "--negative",
-        default="auto",
-        help="control-role override for --output drf/bds/paired_ci — a baseline source to "
-        "compare against, e.g. global_mean, control, all_perturbed_mean (ignored by 'score')",
-    )
-    score.add_argument(
-        "--output",
-        default="score",
-        choices=list(CALIBRATORS),
-        help="'score' (default): raw metric of --predictions vs ground truth. "
-        "'drf'/'bds'/'paired_ci': compare --positive against --negative instead — "
-        "pass --positive prediction --negative <baseline> to rank the model against it",
-    )
     score.add_argument("--out-dir", default="results")
     score.add_argument("--workers", type=int, default=0, help="threads (0 = auto)")
     score.add_argument("--perturbation-key", default="perturbation")

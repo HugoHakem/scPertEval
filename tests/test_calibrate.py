@@ -22,12 +22,9 @@ def _run(name, calibrator, dataset_adata, cfg):
 
 
 def test_calibrators_registered():
-    assert {"drf", "bds", "score", "paired_ci", "ttest", "wilcoxon"} <= set(CALIBRATORS)
-    # drf/bds/paired_ci/ttest/wilcoxon need both controls; score needs only the prediction
+    assert {"drf", "bds", "score"} <= set(CALIBRATORS)
+    # drf/bds need both controls; score needs only the prediction
     assert CALIBRATORS["drf"].requires == ("positive", "negative")
-    assert CALIBRATORS["paired_ci"].requires == ("positive", "negative")
-    assert CALIBRATORS["ttest"].requires == ("positive", "negative")
-    assert CALIBRATORS["wilcoxon"].requires == ("positive", "negative")
     assert CALIBRATORS["score"].requires == ("prediction",)
 
 
@@ -58,36 +55,6 @@ def test_de_protocol_calibrates(dataset_adata, cfg_factory):
     # the de representation should produce a finite, well-defined auprc (distinct DE blocks)
     agg, _, _ = _run("de_auprc", "drf", dataset_adata, cfg_factory())
     assert np.isfinite(agg["mean"])
-
-
-def test_paired_ci_reports_mean_and_bounds(dataset_adata, cfg_factory):
-    agg, rows, _ = _run("pearson_ctrl", "paired_ci", dataset_adata, cfg_factory())
-    assert {"mean", "ci_low", "ci_high"} <= set(agg)
-    assert agg["ci_low"] <= agg["mean"] <= agg["ci_high"]
-    assert {"raw_positive", "raw_negative", "paired_ci"} <= set(rows[0])
-
-
-def test_paired_ci_positive_for_real_signal(dataset_adata, cfg_factory):
-    # the positive control (held-out replicate) should beat the uninformative baseline,
-    # so the paired gap's CI should sit above zero on a dataset with strong perturbation signal.
-    agg, _, _ = _run("pearson_ctrl", "paired_ci", dataset_adata, cfg_factory())
-    assert agg["ci_low"] > 0.0
-
-
-def test_ttest_and_wilcoxon_report_statistic_and_pvalue(dataset_adata, cfg_factory):
-    for calibrator in ("ttest", "wilcoxon"):
-        agg, rows, _ = _run("pearson_ctrl", calibrator, dataset_adata, cfg_factory())
-        assert {"mean", "statistic", "pvalue"} <= set(agg)
-        assert 0.0 <= agg["pvalue"] <= 1.0
-        assert {"raw_positive", "raw_negative", calibrator} <= set(rows[0])
-
-
-def test_ttest_and_wilcoxon_significant_for_real_signal(dataset_adata, cfg_factory):
-    # same strong-signal setup as test_paired_ci_positive_for_real_signal: both one-sided
-    # tests (H1: positive control beats the baseline) should reject at a generous threshold.
-    for calibrator in ("ttest", "wilcoxon"):
-        agg, _, _ = _run("pearson_ctrl", calibrator, dataset_adata, cfg_factory())
-        assert agg["pvalue"] < 0.1, calibrator
 
 
 # --- Ahlmann-Eltze et al. 2025: expr_space + l2 (const-ae's protocol, ported natively) ---
