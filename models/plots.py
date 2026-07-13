@@ -1,10 +1,10 @@
 """Exploratory figures built directly from models/compare.py's functions -- not a notebook yet.
 
 Self-contained: re-invokes compare.calibration_scores/build_all_predictions/per_pert_raw_scores/
-per_pert_comparison/per_pert_drf/pairwise_wilcoxon_holm(_drf) for the DRF/BDS headroom,
-raw-per-perturbation, per-perturbation-DRF, and pairwise-significance data (fast at smoke scale
--- rebuilds the fold-scoped baselines but does no training). Doesn't read any of
-models/compare.py's CSV output, so `python models/compare.py` doesn't need to run first.
+per_pert_drf/pairwise_wilcoxon_holm(_drf) for the DRF/BDS headroom, raw-per-perturbation,
+per-perturbation-DRF, and pairwise-significance data (fast at smoke scale -- rebuilds the
+fold-scoped baselines but does no training). Doesn't read any of models/compare.py's CSV output,
+so `python models/compare.py` doesn't need to run first.
 
 Usage::
 
@@ -34,7 +34,6 @@ from compare import (  # noqa: E402
     pairwise_bayes_factor_drf,
     pairwise_wilcoxon_holm,
     pairwise_wilcoxon_holm_drf,
-    per_pert_comparison,
     per_pert_drf,
     per_pert_raw_scores,
     protocol_gene_counts,
@@ -86,7 +85,7 @@ def load_raw_per_pert() -> dict[str, dict[str, dict[str, float]]]:
     """
     protocols = resolve_protocols(PROTOCOL_SPECS)
     predictions = build_all_predictions()
-    return {name: per_pert_raw_scores(path, protocols) for name, path in predictions.items()}
+    return per_pert_raw_scores(predictions, protocols)
 
 
 def compute_avg_ranks(raw: dict[str, dict[str, dict[str, float]]]) -> pd.DataFrame:
@@ -332,8 +331,8 @@ def plot_drf_median_heatmap(raw: dict[str, dict[str, dict[str, float]]]) -> None
     med = pd.DataFrame(index=protocol_order, columns=MODELS, dtype=float)
     p25, p75 = med.copy(), med.copy()
     for model in MODELS:
-        for protocol, arrs in per_pert_comparison(model, raw, protocols).items():
-            drf = arrs["drf"]
+        for protocol, vals in per_pert_drf(model, raw, protocols).items():
+            drf = np.asarray(list(vals.values()), dtype=float)
             drf = drf[np.isfinite(drf)]
             if drf.size:
                 med.loc[protocol, model] = np.median(drf)
