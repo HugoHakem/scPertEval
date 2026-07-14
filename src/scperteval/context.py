@@ -160,27 +160,40 @@ class Context:
         """Differential expression for one (source vs reference) comparison, cached.
 
         The reference moments are leave-one-out, so a perturbation is never compared against
-        a sample of itself.
+        a sample of itself. Comparisons involving a non-cacheable source (e.g. per-call
+        ``prediction`` cells) are computed fresh and never stored, so a shared handle can score
+        different predictions without cross-call contamination.
         """
         method = self.cfg.de_method
+        cacheable = self._cacheable(source) and self._cacheable(reference)
         key = (self._mom_key(source, pert), self._mom_key(reference, pert), method)
-        if key not in self._store.de:
-            # A method may declare a `from_moments` capability (see DE_METHODS); if it does,
-            # dispatch through the shared moment cache instead of recomputing from cells.
-            from_moments = DE_METHODS.meta(method).get("from_moments")
-            if from_moments is not None:
-                self._store.de[key] = from_moments(*self._moments(source, pert), *self._moments(reference, pert))
-            else:
-                self._store.de[key] = DE_METHODS[method](self._de_cells(source, pert), self._de_cells(reference, pert))
-        return self._store.de[key]
+        if cacheable and key in self._store.de:
+            return self._store.de[key]
+        # A method may declare a `from_moments` capability (see DE_METHODS); if it does,
+        # dispatch through the shared moment cache instead of recomputing from cells.
+        from_moments = DE_METHODS.meta(method).get("from_moments")
+        if from_moments is not None:
+            result = from_moments(*self._moments(source, pert), *self._moments(reference, pert))
+        else:
+            result = DE_METHODS[method](self._de_cells(source, pert), self._de_cells(reference, pert))
+        if cacheable:
+            self._store.de[key] = result
+        return result
 
     def _moments(self, source, pert):
         if source == "all_perturbed":
             return self._reference_moments(pert)
+        if not self._cacheable(source):  # per-call source (e.g. prediction) — compute fresh, don't cache
+            return _moments(self._de_cells(source, pert))
         key = self._mom_key(source, pert)
         if key not in self._store.mom:
             self._store.mom[key] = _moments(self._de_cells(source, pert))
         return self._store.mom[key]
+
+    @staticmethod
+    def _cacheable(source):
+        """Whether a source's cells are dataset-derived (shareable) rather than per-call (predictions)."""
+        return SOURCES.meta(source).get("cacheable", True)
 
     def _de_cells(self, source, pert):
         if source == "all_perturbed":
@@ -282,8 +295,12 @@ class Context:
         if self._store.pca is None or self._store.pca_k < k:
             with self._init_lock:
                 if self._store.pca is None or self._store.pca_k < k:
-                    self._store.pca_k = max(k, 50)
-                    self._store.pca = self._fit_pca(self._store.pca_k)
+                    n = max(k, 50)
+                    fit = self._fit_pca(n)
+                    # Publish the fit BEFORE the size: a concurrent reader gating on ``pca_k < k``
+                    # (outside the lock) then never sees a bumped size paired with a smaller fit.
+                    self._store.pca = fit
+                    self._store.pca_k = n
         return self._store.pca
 
     PCA_FIT_CAP = 50000

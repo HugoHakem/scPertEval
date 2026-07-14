@@ -82,7 +82,7 @@ def test_calibrate_bds(dataset_adata):
 
 def test_score_single_protocol(dataset_adata, predictions_factory):
     pred = predictions_factory(dataset_adata, kind="degraded")
-    r = sp.score(prep(dataset_adata, "pearson"), pred, "pearson")
+    r = sp.score(prep(dataset_adata, "pearson"), "pearson", pred)
     assert isinstance(r, EvalResult)
     assert "score" in r.per_perturbation.columns
     assert np.isfinite(r.aggregate["mean"])
@@ -110,7 +110,7 @@ def test_de_rejects_unknown_method(dataset_adata):
     "call",
     [
         lambda ad: sp.calibrate(ad, "mse"),
-        lambda ad: sp.score(ad, ad, "mse"),
+        lambda ad: sp.score(ad, "mse", ad),
         lambda ad: sp.de(ad, "t-test"),
     ],
 )
@@ -133,7 +133,7 @@ def test_concurrent_mixed_verbs_match_sequential(dataset_adata, predictions_fact
         lambda: sp.calibrate(p, "pearson_ctrl").aggregate["mean"],
         lambda: sp.calibrate(p, "mse", output="bds").aggregate["bds"],
         lambda: sp.calibrate(p, "de_auprc").aggregate["mean"],
-        lambda: sp.score(p, pred, "pearson").aggregate["mean"],
+        lambda: sp.score(p, "pearson", pred).aggregate["mean"],
         lambda: float(sp.de(p, "MWU").statistic.to_numpy().sum()),
     ]
     seq = [j() for j in jobs]
@@ -146,11 +146,43 @@ def test_wmse_weights_not_contaminated_across_truths(dataset_adata, predictions_
     # `calibrate` (truth=gt_half) then `score` (truth=gt_all_cells) on ONE handle must NOT let the
     # WMSE weights bleed between the two ground-truth sources (the old per-pert `_weights` bug).
     pred = predictions_factory(dataset_adata, kind="degraded")
-    clean = sp.score(prep(dataset_adata, "wmse_exp2"), pred, "wmse_exp2").aggregate
+    clean = sp.score(prep(dataset_adata, "wmse_exp2"), "wmse_exp2", pred).aggregate
     shared = prep(dataset_adata, "wmse_exp2")
     sp.calibrate(shared, "wmse_exp2")  # would poison a truth-agnostic weights cache
-    after = sp.score(shared, pred, "wmse_exp2").aggregate
+    after = sp.score(shared, "wmse_exp2", pred).aggregate
     assert clean == pytest.approx(after)
+
+
+def test_score_different_predictions_not_contaminated(dataset_adata, predictions_factory):
+    # Scoring a DE-representation protocol on TWO different predictions through ONE handle must not
+    # reuse the first prediction's DE (the shared-store `prediction` source is per-call, not cached).
+    perfect = predictions_factory(dataset_adata, kind="perfect")
+    degraded = predictions_factory(dataset_adata, kind="degraded")
+    base_p = sp.score(prep(dataset_adata, "de_auprc"), "de_auprc", perfect).aggregate
+    base_d = sp.score(prep(dataset_adata, "de_auprc"), "de_auprc", degraded).aggregate
+    assert base_p != pytest.approx(base_d)  # the two predictions genuinely score differently
+    shared = prep(dataset_adata, "de_auprc")
+    got_p = sp.score(shared, "de_auprc", perfect).aggregate
+    got_d = sp.score(shared, "de_auprc", degraded).aggregate  # must NOT reuse `perfect`'s cached DE
+    assert got_p == pytest.approx(base_p)
+    assert got_d == pytest.approx(base_d)
+
+
+def test_calibrate_validates_de_method(dataset_adata):
+    with pytest.raises(ValueError, match="unknown DE method"):
+        sp.calibrate(prep(dataset_adata, "mse"), "mse", de_method="nope")
+
+
+def test_protocol_must_be_a_string(dataset_adata):
+    with pytest.raises(TypeError, match="protocol must be"):
+        sp.calibrate(prep(dataset_adata, "mse"), ["pearson", "mse"])
+
+
+def test_out_dir_no_collision_across_protocols(dataset_adata, tmp_path):
+    p = prep(dataset_adata, ["mse", "pearson_ctrl"])
+    sp.calibrate(p, "mse", out_dir=str(tmp_path))
+    sp.calibrate(p, "pearson_ctrl", out_dir=str(tmp_path))
+    assert len(list(tmp_path.glob("*__drf.csv"))) == 2  # distinct filenames, no overwrite
 
 
 def test_undeclared_protocol_on_demand(dataset_adata):

@@ -150,6 +150,8 @@ def _require_prepared(prepared, verb: str) -> None:
 
 def _single_protocol(protocol: str):
     """Resolve one protocol spec to exactly one concrete protocol (error otherwise)."""
+    if not isinstance(protocol, str):
+        raise TypeError(f"protocol must be a single protocol name (str), not {type(protocol).__name__}")
     protos = resolve_protocols([protocol])
     if len(protos) != 1:
         raise ValueError(
@@ -157,6 +159,11 @@ def _single_protocol(protocol: str):
             f"protocols (pass a single name, e.g. 'pearson_ctrl' or 'mse_top_k=30')"
         )
     return protos[0]
+
+
+def _check_de_method(method: str) -> None:
+    if method not in DE_METHODS:
+        raise ValueError(f"unknown DE method {method!r}; available: {', '.join(DE_METHODS.names())}")
 
 
 def _stamp() -> str:
@@ -190,7 +197,9 @@ def prepare(
     Parameters
     ----------
     dataset : str or pathlib.Path or anndata.AnnData
-        A preprocessed ``.h5ad`` path, or an in-memory AnnData.
+        A preprocessed ``.h5ad`` path, or an in-memory AnnData. If an AnnData, the handle holds a
+        reference to it (not a copy) — do not mutate it while the handle is in use, or results
+        become inconsistent.
     protocols : str or list of str
         The protocol(s) you intend to evaluate — used to precompute their spaces up front (pass
         ``"all"`` for the whole catalog, or ``[]`` if you only need :func:`de` / no spaces). A verb
@@ -255,6 +264,7 @@ def calibrate(
     _require_prepared(prepared, "calibrate")
     if output not in ("drf", "bds"):
         raise ValueError(f"calibrate output must be 'drf' or 'bds', not {output!r} (use score() for predictions)")
+    _check_de_method(de_method)
     proto = _single_protocol(protocol)
     ctx = prepared._run_context(
         protocols=[proto.name],
@@ -272,8 +282,8 @@ def calibrate(
 
 def score(
     prepared: Prepared,
-    predictions: str | Path | AnnData,
     protocol: str,
+    predictions: str | Path | AnnData,
     *,
     de_method: DEMethodName = "t-test",
     out_dir: str | Path | None = None,
@@ -284,10 +294,10 @@ def score(
     ----------
     prepared : Prepared
         A handle from :func:`prepare` (the ground-truth dataset).
-    predictions : str or pathlib.Path or anndata.AnnData
-        Predicted cells — the same genes and perturbation labels as the dataset.
     protocol : str
         A single protocol spec (see :func:`calibrate`).
+    predictions : str or pathlib.Path or anndata.AnnData
+        Predicted cells — the same genes and perturbation labels as the dataset.
     de_method : str, optional
         DE backend for any DE-dependent part of the protocol (default ``"t-test"``).
     out_dir : str or pathlib.Path, optional
@@ -299,6 +309,7 @@ def score(
         ``.aggregate`` (mean/median raw metric) and ``.per_perturbation`` (the detail table).
     """
     _require_prepared(prepared, "score")
+    _check_de_method(de_method)
     proto = _single_protocol(protocol)
     ctx = prepared._run_context(
         protocols=[proto.name],
@@ -338,8 +349,7 @@ def de(
         ``.statistic`` and ``.pvalue_adj`` DataFrames (perturbations × genes).
     """
     _require_prepared(prepared, "de")
-    if method not in DE_METHODS:
-        raise ValueError(f"unknown DE method {method!r}; available: {', '.join(DE_METHODS.names())}")
+    _check_de_method(method)
     ctx = prepared._run_context(de_method=method, out_dir=str(out_dir) if out_dir is not None else "results")
     ctx._ensure_ref_sums()
     statistic, pvalue_adj = compute_de(ctx)

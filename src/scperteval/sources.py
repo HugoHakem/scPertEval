@@ -52,6 +52,7 @@ def src_gt_all_cells(ctx, pert):
 @SOURCES.register(
     "prediction",
     provides="cells",
+    cacheable=False,  # cells come from the per-call predictions, not the dataset — never cache in the shared store
     description="model-predicted cells for the perturbation, from the --predictions h5ad",
 )
 def src_prediction(ctx, pert):
