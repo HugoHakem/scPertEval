@@ -41,7 +41,7 @@ gt : numpy.ndarray
 prediction : numpy.ndarray
     Predicted pseudobulk profile, shape ``(G,)``.
 ctx : Context
-    Provides per-gene WMSE weights via ``ctx.wmse_weights``."""
+    Per-run context; used to read the ground-truth DE effect sizes for the per-gene weights."""
 
 _POPULATION = """\
 gt : numpy.ndarray
@@ -176,7 +176,13 @@ def weighted_mse(gt, prediction, ctx, exp=2.0):
     float
         Non-negative weighted MSE; 0 is perfect.
     """
-    w = ctx.wmse_weights(ctx.current_pert) ** exp
+    # Mejia DEG weights: min-max normalised absolute GT effect size (the ground-truth DE is cached
+    # in ctx.de, keyed by GT source and method), raised to `exp`.
+    s = np.abs(ctx.de(ctx.current_pert, ctx.cfg.truth, "all_perturbed").statistic)
+    finite = np.isfinite(s)
+    lo, hi = s[finite].min(), s[finite].max()
+    weights = np.nan_to_num((s - lo) / (hi - lo) if hi > lo else np.zeros_like(s), nan=0.0)
+    w = weights**exp
     total = w.sum()
     w = w / total if total > 0 else np.full(w.size, 1.0 / w.size)
     return float(np.sum(w * (gt - prediction) ** 2))

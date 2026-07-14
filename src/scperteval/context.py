@@ -206,19 +206,6 @@ class Context:
     def _mom_key(source, pert):
         return source if source == "control" else (source, pert)
 
-    def wmse_weights(self, pert):
-        """Mejia DEG weights: min-max normalised absolute effect size of GT vs the reference.
-
-        Derived inline from the correctly-keyed DE cache (``de(...)`` is keyed by GT source and
-        method) — the O(genes) normalisation isn't worth its own cache, and caching it by
-        perturbation alone would be wrong when the GT source or DE method differs per call.
-        """
-        s = np.abs(self.de(pert, self.cfg.truth, "all_perturbed").statistic)
-        finite = np.isfinite(s)
-        lo, hi = s[finite].min(), s[finite].max()
-        w = (s - lo) / (hi - lo) if hi > lo else np.zeros_like(s)
-        return np.nan_to_num(w, nan=0.0)
-
     # -- the all-perturbed reference: one sample, served leave-one-out -------------
 
     def reference(self) -> Reference:
