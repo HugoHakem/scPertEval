@@ -1,12 +1,13 @@
 """The native Python API — evaluate one protocol, or compute one DE method, at a time.
 
-These functions mirror the CLI engine but take plain keyword arguments and return in-memory
-results (pandas). They are re-exported at the package root, e.g. ``scperteval.calibrate(...)``.
+Usage is always **prepare, then run**: build a reusable :func:`prepare` handle for a dataset (read
++ index once, precompute the declared protocols' spaces), then call :func:`calibrate` /
+:func:`score` / :func:`de` on that handle — each evaluates a single protocol or DE method and
+returns in-memory results (pandas). Many calls share the handle's dataset and caches (no reload),
+and are safe to run concurrently: each call builds its own lightweight context over the shared,
+thread-safe cache, so nothing is mutated across calls.
 
-Each call evaluates a **single** protocol (``calibrate``/``score``) or a **single** DE method
-(``de``). To run several, call once per protocol/method — and reuse the expensive dataset/DE/PCA
-setup across those calls with :func:`prepare`. ``prepare`` is optional: if you pass a path or an
-AnnData directly, the context is built on the fly (with lazy caching), just less efficiently.
+Re-exported at the package root, e.g. ``scperteval.calibrate(...)``.
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ import pandas as pd
 
 from . import io
 from .blocks.de import DE_METHODS
-from .context import Context
+from .context import CacheStore, Context
 from .dataset import Dataset
 from .predictions import PredictionSet
 from .protocols.resolve import resolve_protocols
@@ -42,8 +43,8 @@ __all__ = [
 
 #: The calibration outputs selectable from :func:`calibrate` (closed set).
 CalibratorName = Literal["drf", "bds"]
-#: The DE backends selectable from :func:`de` — mirrors the ``DE_METHODS`` registry's built-ins
-#: (kept in sync by ``tests/test_api.py::test_de_method_literal_matches_registry``).
+#: The DE backends selectable from :func:`de` / ``de_method`` — mirrors the ``DE_METHODS`` registry's
+#: built-ins (kept in sync by ``tests/test_api.py::test_de_method_literal_matches_registry``).
 DEMethodName = Literal["t-test", "MWU", "t-test_overestim_var"]
 
 
@@ -89,28 +90,28 @@ class DatasetDEResults(NamedTuple):
 
 
 class Prepared:
-    """A reusable, prepared dataset + context.
+    """A reusable, prepared dataset: build once with :func:`prepare`, pass to many verb calls.
 
-    Build it once with :func:`prepare`, then pass it to many :func:`calibrate` / :func:`score` /
-    :func:`de` calls: the dataset read/index and the DE/reference/PCA caches are computed once and
-    shared across those calls. Treat it as opaque — its internals are not part of the public API.
-
-    Reuse is intended for sequential calls (or your own outer orchestration); a single handle is
-    not designed to be driven by concurrent calls that use conflicting configuration.
+    Holds the read-and-indexed dataset (resident in memory), a shared thread-safe cache, and the
+    immutable prepare-time configuration. Each :func:`calibrate` / :func:`score` / :func:`de` call
+    builds its own lightweight context over this handle, so the handle itself is never mutated —
+    sequential *and* concurrent calls against one handle are safe. Treat it as opaque; its
+    internals are not part of the public API.
     """
 
-    __slots__ = ("_cfg", "_context")
+    __slots__ = ("_cfg", "_ds", "_store")
 
-    def __init__(self, context: Context, cfg: RunConfig):
-        self._context = context
+    def __init__(self, ds: Dataset, store: CacheStore, cfg: RunConfig):
+        self._ds = ds
+        self._store = store
         self._cfg = cfg
 
+    def _run_context(self, **overrides) -> Context:
+        """A fresh per-call context sharing this handle's dataset + cache, with per-call config."""
+        return Context(self._ds, replace(self._cfg, **overrides), store=self._store)
+
     def __repr__(self) -> str:
-        ds = self._context.ds
-        return (
-            f"Prepared(name={Path(self._cfg.dataset).stem!r}, "
-            f"perturbations={len(ds.perturbations)}, de_method={self._cfg.de_method!r})"
-        )
+        return f"Prepared(name={Path(self._cfg.dataset).stem!r}, perturbations={len(self._ds.perturbations)})"
 
 
 # --------------------------------------------------------------------------- helpers
@@ -139,6 +140,14 @@ def _to_predictions(predictions, ds: Dataset, cfg: RunConfig) -> PredictionSet:
     return PredictionSet(predictions, ds, cfg)
 
 
+def _require_prepared(prepared, verb: str) -> None:
+    if not isinstance(prepared, Prepared):
+        raise TypeError(
+            f"{verb}() takes a handle from prepare(); got {type(prepared).__name__}. "
+            f"Call prepare(dataset, protocols) first, then pass the result here."
+        )
+
+
 def _single_protocol(protocol: str):
     """Resolve one protocol spec to exactly one concrete protocol (error otherwise)."""
     protos = resolve_protocols([protocol])
@@ -154,35 +163,13 @@ def _stamp() -> str:
     return datetime.now().strftime("%Y-%m-%dT%H%M%S")
 
 
-def _context(data, *, name, de_method, subsample, seed, min_cells, perturbation_key, control_label, workers):
-    """Return ``(context, base_cfg)`` — reuse a :class:`Prepared` handle, or build fresh (lazy).
-
-    When ``data`` is a :class:`Prepared`, the dataset/DE configuration comes from the handle and
-    the shaping keyword arguments here are ignored.
-    """
-    if isinstance(data, Prepared):
-        return data._context, data._cfg
-    cfg = RunConfig(
-        dataset=_display_name(data, name),
-        protocols=[],
-        de_method=de_method,
-        subsample=subsample,
-        seed=seed,
-        min_cells=min_cells,
-        perturbation_key=perturbation_key,
-        control_label=control_label,
-        workers=workers,
-    )
-    return Context(_to_dataset(data, cfg), cfg), cfg
-
-
 # --------------------------------------------------------------------------- public functions
 
 
 def prepare(
     dataset: str | Path | AnnData,
+    protocols: str | list[str],
     *,
-    de_method: DEMethodName = "t-test",
     subsample: int = 8192,
     seed: int = 42,
     min_cells: int = 30,
@@ -190,36 +177,37 @@ def prepare(
     control_label: str = "control",
     workers: int = 0,
     name: str | None = None,
-    protocols: str | list[str] | None = None,
 ) -> Prepared:
-    """Build a reusable context for a dataset, so many calls reuse one setup.
+    """Prepare a dataset for evaluation — the required first step.
 
-    Reads and indexes the dataset once and returns an opaque :class:`Prepared` handle to pass to
-    :func:`calibrate` / :func:`score` / :func:`de`. Those calls then share the dataset and the
-    DE/reference/PCA caches instead of rebuilding them each time. Optional — omit it and pass the
-    dataset directly to a verb, which builds the context on the fly (lazily, less efficiently).
+    Reads and indexes the dataset once (held in memory) and **precomputes the declared protocols'
+    feature spaces** (e.g. PCA, fit once at the largest requested ``k``) plus the shared reference
+    sample, deterministically. The returned :class:`Prepared` handle is then passed to
+    :func:`calibrate` / :func:`score` / :func:`de`, which reuse its dataset and caches — including
+    across concurrent calls. Differential expression is **not** precomputed here; it is computed at
+    the verb call under that call's DE method (and cached per method on the handle).
 
     Parameters
     ----------
     dataset : str or pathlib.Path or anndata.AnnData
         A preprocessed ``.h5ad`` path, or an in-memory AnnData.
-    de_method : str, optional
-        DE backend cached for DE-dependent work (default ``"t-test"``).
+    protocols : str or list of str
+        The protocol(s) you intend to evaluate — used to precompute their spaces up front (pass
+        ``"all"`` for the whole catalog, or ``[]`` if you only need :func:`de` / no spaces). A verb
+        may still run a protocol not declared here; its space is then computed on first use.
     subsample, seed, min_cells, perturbation_key, control_label, workers, name
-        The same dataset/run knobs as the verbs; see :class:`~scperteval.types.RunConfig`.
-    protocols : str or list of str, optional
-        A hint: if given, pre-warm the shared singletons these protocols need (otherwise they are
-        computed lazily on first use).
+        Dataset/run knobs fixed for the handle; see :class:`~scperteval.types.RunConfig`.
 
     Returns
     -------
     Prepared
         An opaque, reusable handle.
     """
+    specs = [protocols] if isinstance(protocols, str) else list(protocols)
+    protos = resolve_protocols(specs) if specs else []
     cfg = RunConfig(
         dataset=_display_name(dataset, name),
-        protocols=[],
-        de_method=de_method,
+        protocols=[p.name for p in protos],
         subsample=subsample,
         seed=seed,
         min_cells=min_cells,
@@ -228,42 +216,34 @@ def prepare(
         workers=workers,
     )
     ctx = Context(_to_dataset(dataset, cfg), cfg)
-    if protocols is not None:
-        specs = [protocols] if isinstance(protocols, str) else list(protocols)
-        ctx.warm(resolve_protocols(specs))
-    return Prepared(ctx, cfg)
+    ctx.warm(protos)  # precompute declared spaces + reference (method-independent); no DE
+    return Prepared(ctx.ds, ctx._store, cfg)
 
 
 def calibrate(
-    data: str | Path | AnnData | Prepared,
+    prepared: Prepared,
     protocol: str,
     *,
+    de_method: DEMethodName = "t-test",
     output: CalibratorName = "drf",
     positive: str = "auto",
     negative: str = "auto",
-    de_method: DEMethodName = "t-test",
-    subsample: int = 8192,
-    seed: int = 42,
-    min_cells: int = 30,
-    perturbation_key: str = "perturbation",
-    control_label: str = "control",
-    workers: int = 0,
-    name: str | None = None,
     out_dir: str | Path | None = None,
 ) -> EvalResult:
     """Calibrate one protocol against the built-in positive/negative controls (DRF or BDS).
 
     Parameters
     ----------
-    data : str or pathlib.Path or anndata.AnnData or Prepared
-        A dataset (path/AnnData) or a :func:`prepare` handle.
+    prepared : Prepared
+        A handle from :func:`prepare`.
     protocol : str
         A single protocol spec — a name (``"pearson_ctrl"``) or a tunable one (``"mse_top_k=30"``).
+    de_method : str, optional
+        DE backend for any DE-dependent part of the protocol (default ``"t-test"``).
     output : {"drf", "bds"}, optional
         Which calibrator to apply (default ``"drf"``).
-    positive, negative, de_method, subsample, seed, min_cells, perturbation_key, control_label, workers, name
-        The same knobs as the CLI; see :class:`~scperteval.types.RunConfig`. When ``data`` is a
-        :class:`Prepared` handle, the dataset/DE knobs come from the handle.
+    positive, negative : str, optional
+        Override the protocol's control sources (``"auto"`` defers to the protocol).
     out_dir : str or pathlib.Path, optional
         If given, also write the per-perturbation CSV there (as the CLI does).
 
@@ -272,119 +252,83 @@ def calibrate(
     EvalResult
         ``.aggregate`` (the protocol's summary stats) and ``.per_perturbation`` (the detail table).
     """
+    _require_prepared(prepared, "calibrate")
     if output not in ("drf", "bds"):
         raise ValueError(f"calibrate output must be 'drf' or 'bds', not {output!r} (use score() for predictions)")
     proto = _single_protocol(protocol)
-    ctx, base = _context(
-        data,
-        name=name,
-        de_method=de_method,
-        subsample=subsample,
-        seed=seed,
-        min_cells=min_cells,
-        perturbation_key=perturbation_key,
-        control_label=control_label,
-        workers=workers,
-    )
-    cfg = replace(
-        base,
+    ctx = prepared._run_context(
         protocols=[proto.name],
+        de_method=de_method,
         output=output,
         positive=positive,
         negative=negative,
         out_dir=str(out_dir) if out_dir is not None else "results",
     )
-    ctx.cfg = cfg
-    aggregates, rows, _ = run_all(cfg, [proto], ctx)
+    aggregates, rows, _ = run_all(ctx.cfg, [proto], ctx)
     if out_dir is not None:
-        io.write_rows(cfg, rows, _stamp())
-    return EvalResult(aggregate=aggregates[proto.name], per_perturbation=io.rows_frame(cfg, rows))
+        io.write_rows(ctx.cfg, rows, _stamp())
+    return EvalResult(aggregate=aggregates[proto.name], per_perturbation=io.rows_frame(ctx.cfg, rows))
 
 
 def score(
-    data: str | Path | AnnData | Prepared,
+    prepared: Prepared,
     predictions: str | Path | AnnData,
     protocol: str,
     *,
     de_method: DEMethodName = "t-test",
-    subsample: int = 8192,
-    seed: int = 42,
-    min_cells: int = 30,
-    perturbation_key: str = "perturbation",
-    control_label: str = "control",
-    workers: int = 0,
-    name: str | None = None,
     out_dir: str | Path | None = None,
 ) -> EvalResult:
     """Score model predictions against ground truth for one protocol.
 
     Parameters
     ----------
-    data : str or pathlib.Path or anndata.AnnData or Prepared
-        The ground-truth dataset (path/AnnData) or a :func:`prepare` handle.
+    prepared : Prepared
+        A handle from :func:`prepare` (the ground-truth dataset).
     predictions : str or pathlib.Path or anndata.AnnData
         Predicted cells — the same genes and perturbation labels as the dataset.
     protocol : str
         A single protocol spec (see :func:`calibrate`).
-    de_method, subsample, seed, min_cells, perturbation_key, control_label, workers, name, out_dir
-        As in :func:`calibrate`.
+    de_method : str, optional
+        DE backend for any DE-dependent part of the protocol (default ``"t-test"``).
+    out_dir : str or pathlib.Path, optional
+        If given, also write the per-perturbation CSV there.
 
     Returns
     -------
     EvalResult
         ``.aggregate`` (mean/median raw metric) and ``.per_perturbation`` (the detail table).
     """
+    _require_prepared(prepared, "score")
     proto = _single_protocol(protocol)
-    ctx, base = _context(
-        data,
-        name=name,
-        de_method=de_method,
-        subsample=subsample,
-        seed=seed,
-        min_cells=min_cells,
-        perturbation_key=perturbation_key,
-        control_label=control_label,
-        workers=workers,
-    )
-    cfg = replace(
-        base,
+    ctx = prepared._run_context(
         protocols=[proto.name],
+        de_method=de_method,
         output="score",
         truth="gt_all_cells",
         out_dir=str(out_dir) if out_dir is not None else "results",
     )
-    ctx.cfg = cfg
-    ctx.predictions = _to_predictions(predictions, ctx.ds, cfg)
-    aggregates, rows, _ = run_all(cfg, [proto], ctx)
+    ctx.predictions = _to_predictions(predictions, ctx.ds, ctx.cfg)
+    aggregates, rows, _ = run_all(ctx.cfg, [proto], ctx)
     if out_dir is not None:
-        io.write_rows(cfg, rows, _stamp())
-    return EvalResult(aggregate=aggregates[proto.name], per_perturbation=io.rows_frame(cfg, rows))
+        io.write_rows(ctx.cfg, rows, _stamp())
+    return EvalResult(aggregate=aggregates[proto.name], per_perturbation=io.rows_frame(ctx.cfg, rows))
 
 
 def de(
-    data: str | Path | AnnData | Prepared,
+    prepared: Prepared,
     method: DEMethodName = "t-test",
     *,
-    subsample: int = 8192,
-    seed: int = 42,
-    min_cells: int = 30,
-    perturbation_key: str = "perturbation",
-    control_label: str = "control",
-    workers: int = 0,
-    name: str | None = None,
     out_dir: str | Path | None = None,
 ) -> DatasetDEResults:
     """Compute per-gene differential expression (ground truth vs all-perturbed) for one method.
 
     Parameters
     ----------
-    data : str or pathlib.Path or anndata.AnnData or Prepared
-        A dataset (path/AnnData) or a :func:`prepare` handle.
+    prepared : Prepared
+        A handle from :func:`prepare`.
     method : str, optional
-        The DE backend (default ``"t-test"``).
-    subsample, seed, min_cells, perturbation_key, control_label, workers, name
-        The same dataset/run knobs as the verbs; ignored when ``data`` is a :class:`Prepared`
-        handle (except ``method``, which always selects the backend).
+        The DE backend (default ``"t-test"``). Different methods reuse the same prepared dataset,
+        cached separately — no reload.
     out_dir : str or pathlib.Path, optional
         If given, also write the HDF5 export there (as the CLI does).
 
@@ -393,21 +337,10 @@ def de(
     DatasetDEResults
         ``.statistic`` and ``.pvalue_adj`` DataFrames (perturbations × genes).
     """
+    _require_prepared(prepared, "de")
     if method not in DE_METHODS:
         raise ValueError(f"unknown DE method {method!r}; available: {', '.join(DE_METHODS.names())}")
-    ctx, base = _context(
-        data,
-        name=name,
-        de_method=method,
-        subsample=subsample,
-        seed=seed,
-        min_cells=min_cells,
-        perturbation_key=perturbation_key,
-        control_label=control_label,
-        workers=workers,
-    )
-    cfg = replace(base, de_method=method, out_dir=str(out_dir) if out_dir is not None else "results")
-    ctx.cfg = cfg
+    ctx = prepared._run_context(de_method=method, out_dir=str(out_dir) if out_dir is not None else "results")
     ctx._ensure_ref_sums()
     statistic, pvalue_adj = compute_de(ctx)
     perts = list(ctx.perturbations)
@@ -417,5 +350,5 @@ def de(
         pvalue_adj=pd.DataFrame(pvalue_adj, index=perts, columns=genes),
     )
     if out_dir is not None:
-        io.write_de(cfg, ctx.ds.var_names, ctx.perturbations, {method: (statistic, pvalue_adj)}, _stamp())
+        io.write_de(ctx.cfg, ctx.ds.var_names, ctx.perturbations, {method: (statistic, pvalue_adj)}, _stamp())
     return result

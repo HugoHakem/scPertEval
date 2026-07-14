@@ -118,7 +118,7 @@ Export per-gene differential expression to HDF5 — provided as a convenience si
 tightly coupled with some evaluation protocols.
 
 ```bash
-scperteval de data/wessels23.h5ad --methods MWU
+scperteval de data/wessels23.h5ad --method MWU
 ```
 
 ### Discover what's available
@@ -133,7 +133,7 @@ scperteval list protocols        # also: de-methods | spaces | sources | calibra
 - `MWU` (Cliff's δ via illico)
 - `t-test_overestim_var` ({func}`scanpy.tl.rank_genes_groups`'s conservative-variance variant — the reference variance is scaled by the target's cell count).
 
-Select one with `--de-method` for a `calibrate`/`score`, or list several with `--methods` for a `de` export. The
+Select one with `--de-method` for a `calibrate`/`score`, or `--method` for a `de` export. The
 overestim variant is a selectable backend for new protocols; no current protocol uses it.
 
 ## Use it from Python

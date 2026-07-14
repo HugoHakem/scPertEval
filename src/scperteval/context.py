@@ -1,7 +1,8 @@
-"""The per-run engine that turns a (perturbation, source) into a protocol's view.
+"""The per-call engine that turns a (perturbation, source) into a protocol's view.
 
-Lazily builds and caches the shared building blocks, and turns a (perturbation, source)
-into the exact view a protocol consumes.
+A fresh :class:`Context` is built for each verb call, carrying that call's options; the expensive
+building blocks (DE, reference sample, PCA/space projections) live in a shared, thread-safe
+:class:`CacheStore` so many calls against one prepared dataset reuse them safely.
 """
 
 from __future__ import annotations
@@ -23,40 +24,59 @@ if TYPE_CHECKING:
     from .predictions import PredictionSet
 
 
-class Context:
-    """Per-run engine: owns the dataset, caches shared computations, and dispatches views.
+class CacheStore:
+    """The shared, thread-safe memoization for one prepared dataset.
 
-    Instantiated once per ``scperteval run`` call and passed to every metric as ``ctx``.
-    Caches are keyed per perturbation so the runner can fan work out across threads;
-    ``current_pert`` is thread-local for the same reason.
+    Held by a :class:`~scperteval.api.Prepared` handle and shared by reference across the
+    ephemeral per-call :class:`Context` objects the verbs build. All entries are dataset-level
+    or per-(perturbation, comparison) — none depend on a single call's ``output``/``truth``, so
+    concurrent calls reuse them safely (distinct keys, or idempotent recompute under ``lock``).
+    """
+
+    def __init__(self):
+        # Reentrant: several lazy initialisers (e.g. _ensure_ref_sums, ref_projection)
+        # call reference() while already holding this lock, which a plain Lock would
+        # self-deadlock on.
+        self.lock = threading.RLock()
+        self.de: dict = {}
+        self.mom: dict = {}
+        self.pca: Any = None
+        self.pca_k = 0
+        self.control_mean: np.ndarray | None = None
+        self.reference: Reference | None = None
+        self.ref_proj: dict = {}
+        self.ref_sums: tuple | None = None
+
+
+class Context:
+    """Per-call engine: turns a (perturbation, source) into a protocol's view.
+
+    A fresh, cheap ``Context`` is built for each verb call, carrying that call's ``cfg`` (the
+    per-call options: DE method, ground-truth source, calibrator, controls) and its own
+    ``predictions``/``current_pert``. The expensive caches live in a shared :class:`CacheStore`
+    (``store``) so many calls against one prepared dataset reuse them without recomputation or
+    cross-call mutation. ``current_pert`` is thread-local so the runner can fan out across threads.
 
     Parameters
     ----------
     dataset : ~scperteval.dataset.Dataset
         Loaded and indexed AnnData wrapper.
     cfg : ~scperteval.types.RunConfig
-        Resolved run options (DE method, subsample size, seed, …).
-
+        Resolved options for this call (DE method, subsample size, seed, …).
+    store : CacheStore, optional
+        Shared cache to reuse (from a prepared handle). A fresh one is created if omitted.
     """
 
-    def __init__(self, dataset: Dataset, cfg: RunConfig):
+    def __init__(self, dataset: Dataset, cfg: RunConfig, store: CacheStore | None = None):
         self.ds = dataset
         self.cfg = cfg
         self.predictions: PredictionSet | None = None  # set in prediction-scoring mode
         self._local = threading.local()
-        # Reentrant: several lazy initialisers (e.g. _ensure_ref_sums, ref_projection)
-        # call reference() while already holding this lock, which a plain Lock would
-        # self-deadlock on.
-        self._init_lock = threading.RLock()
-        self._de: dict = {}
-        self._mom: dict = {}
-        self._weights: dict = {}
-        self._pca: Any = None
-        self._pca_k = 0
-        self._control_mean: np.ndarray | None = None
-        self._reference: Reference | None = None
-        self._ref_proj: dict = {}
-        self._ref_sums: tuple | None = None
+        self._store = store if store is not None else CacheStore()
+
+    @property
+    def _init_lock(self):
+        return self._store.lock
 
     @property
     def perturbations(self):
@@ -144,23 +164,23 @@ class Context:
         """
         method = self.cfg.de_method
         key = (self._mom_key(source, pert), self._mom_key(reference, pert), method)
-        if key not in self._de:
+        if key not in self._store.de:
             # A method may declare a `from_moments` capability (see DE_METHODS); if it does,
             # dispatch through the shared moment cache instead of recomputing from cells.
             from_moments = DE_METHODS.meta(method).get("from_moments")
             if from_moments is not None:
-                self._de[key] = from_moments(*self._moments(source, pert), *self._moments(reference, pert))
+                self._store.de[key] = from_moments(*self._moments(source, pert), *self._moments(reference, pert))
             else:
-                self._de[key] = DE_METHODS[method](self._de_cells(source, pert), self._de_cells(reference, pert))
-        return self._de[key]
+                self._store.de[key] = DE_METHODS[method](self._de_cells(source, pert), self._de_cells(reference, pert))
+        return self._store.de[key]
 
     def _moments(self, source, pert):
         if source == "all_perturbed":
             return self._reference_moments(pert)
         key = self._mom_key(source, pert)
-        if key not in self._mom:
-            self._mom[key] = _moments(self._de_cells(source, pert))
-        return self._mom[key]
+        if key not in self._store.mom:
+            self._store.mom[key] = _moments(self._de_cells(source, pert))
+        return self._store.mom[key]
 
     def _de_cells(self, source, pert):
         if source == "all_perturbed":
@@ -174,14 +194,17 @@ class Context:
         return source if source == "control" else (source, pert)
 
     def wmse_weights(self, pert):
-        """Mejia DEG weights: min-max normalised absolute effect size of GT vs the reference."""
-        if pert not in self._weights:
-            s = np.abs(self.de(pert, self.cfg.truth, "all_perturbed").statistic)
-            finite = np.isfinite(s)
-            lo, hi = s[finite].min(), s[finite].max()
-            w = (s - lo) / (hi - lo) if hi > lo else np.zeros_like(s)
-            self._weights[pert] = np.nan_to_num(w, nan=0.0)
-        return self._weights[pert]
+        """Mejia DEG weights: min-max normalised absolute effect size of GT vs the reference.
+
+        Derived inline from the correctly-keyed DE cache (``de(...)`` is keyed by GT source and
+        method) — the O(genes) normalisation isn't worth its own cache, and caching it by
+        perturbation alone would be wrong when the GT source or DE method differs per call.
+        """
+        s = np.abs(self.de(pert, self.cfg.truth, "all_perturbed").statistic)
+        finite = np.isfinite(s)
+        lo, hi = s[finite].min(), s[finite].max()
+        w = (s - lo) / (hi - lo) if hi > lo else np.zeros_like(s)
+        return np.nan_to_num(w, nan=0.0)
 
     # -- the all-perturbed reference: one sample, served leave-one-out -------------
 
@@ -190,13 +213,13 @@ class Context:
 
         Each cell's perturbation is recorded so the sample can be served leave-one-out.
         """
-        if self._reference is None:
+        if self._store.reference is None:
             with self._init_lock:
-                if self._reference is None:
+                if self._store.reference is None:
                     idx = self.ds.all_perturbed_indices(self.cfg.subsample)
                     cells = to_dense(self.ds.adata.X[idx]).astype(np.float64)
-                    self._reference = Reference(cells, self.ds.pert[idx])
-        return self._reference
+                    self._store.reference = Reference(cells, self.ds.pert[idx])
+        return self._store.reference
 
     def _reference_population(self, space, pert):
         """The reference in a feature space with the target perturbation removed.
@@ -213,11 +236,11 @@ class Context:
 
     def ref_projection(self, space):
         """The reference projected to a perturbation-independent space, cached once."""
-        if space not in self._ref_proj:
+        if space not in self._store.ref_proj:
             with self._init_lock:
-                if space not in self._ref_proj:
-                    self._ref_proj[space] = SPACES[space](self.reference().cells, self, None)
-        return self._ref_proj[space]
+                if space not in self._store.ref_proj:
+                    self._store.ref_proj[space] = SPACES[space](self.reference().cells, self, None)
+        return self._store.ref_proj[space]
 
     def _ensure_ref_sums(self):
         """Cache the reference's column sums and sums-of-squares once.
@@ -225,12 +248,12 @@ class Context:
         Leave-one-out moments are then an O(target cells) subtraction rather than a
         re-densify per perturbation.
         """
-        if self._ref_sums is None:
+        if self._store.ref_sums is None:
             with self._init_lock:
-                if self._ref_sums is None:
+                if self._store.ref_sums is None:
                     X = self.reference().cells
-                    self._ref_sums = (X.sum(0), np.einsum("ij,ij->j", X, X), len(X))
-        return self._ref_sums
+                    self._store.ref_sums = (X.sum(0), np.einsum("ij,ij->j", X, X), len(X))
+        return self._store.ref_sums
 
     def _reference_moments(self, pert):
         total, totalsq, n = self._ensure_ref_sums()
@@ -248,20 +271,20 @@ class Context:
 
     def control_mean(self):
         """The control centroid (cached)."""
-        if self._control_mean is None:
+        if self._store.control_mean is None:
             with self._init_lock:
-                if self._control_mean is None:
-                    self._control_mean = self.ds.control_mean()
-        return self._control_mean
+                if self._store.control_mean is None:
+                    self._store.control_mean = self.ds.control_mean()
+        return self._store.control_mean
 
     def pca(self, k=50):
         """A fitted PCA with at least ``k`` components (refit if a larger k is later asked for)."""
-        if self._pca is None or self._pca_k < k:
+        if self._store.pca is None or self._store.pca_k < k:
             with self._init_lock:
-                if self._pca is None or self._pca_k < k:
-                    self._pca_k = max(k, 50)
-                    self._pca = self._fit_pca(self._pca_k)
-        return self._pca
+                if self._store.pca is None or self._store.pca_k < k:
+                    self._store.pca_k = max(k, 50)
+                    self._store.pca = self._fit_pca(self._store.pca_k)
+        return self._store.pca
 
     PCA_FIT_CAP = 50000
 

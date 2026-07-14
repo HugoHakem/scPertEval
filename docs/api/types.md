@@ -12,7 +12,7 @@
     RunConfig
     Protocol
     Calibrator
-    DEResult
+    PerturbationDEResult
     Param
 ```
 

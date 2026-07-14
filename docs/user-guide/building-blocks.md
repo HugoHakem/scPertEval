@@ -23,15 +23,15 @@ the `register_de_space(name, field=..., top=...)` helper in the same file instea
 
 ## Add a DE method
 
-A DE method maps `(target_cells, reference_cells) -> DEResult(score, pvalue, pvalue_adj)`.
+A DE method maps `(target_cells, reference_cells) -> PerturbationDEResult(statistic, pvalue, pvalue_adj)`.
 Register it with `@DE_METHODS.register` in [`src/scperteval/blocks/de.py`](https://github.com/Virtual-Cell-Research-Community/scPertEval/blob/main/src/scperteval/blocks/de.py) (the
 `bh` helper there BH-adjusts p-values):
 
 ```python
 @DE_METHODS.register("my_test", description="…")
 def de_my_test(target, reference):
-    score, pvalue = ...              # per-gene statistic and raw p-value
-    return DEResult(score=score, pvalue=pvalue, pvalue_adj=bh(pvalue))
+    statistic, pvalue = ...          # per-gene statistic and raw p-value
+    return PerturbationDEResult(statistic=statistic, pvalue=pvalue, pvalue_adj=bh(pvalue))
 ```
 
 Then `--de-method my_test` routes every DE-dependent unit through it.
