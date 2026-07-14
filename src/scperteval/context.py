@@ -7,6 +7,7 @@ into the exact view a protocol consumes.
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -82,8 +83,17 @@ class Context:
         if any(p.representation == "de" for p in protocols):
             self._ensure_ref_sums()
             self._moments("control", None)
-        if any(p.space == "pca50" for p in protocols):
-            self.pca()
+        # Embedding families (e.g. PCA) may register a `prepare` hook: run each distinct hook
+        # once with the full set of its requested variants, so it can precompute once sized for
+        # the largest (fit PCA at max k, not fit-then-refit). Deterministic; runs before the
+        # projection loop below so global spaces never trigger a refit.
+        hooks: dict[Callable, set[str]] = {}
+        for p in protocols:
+            hook = SPACES.meta(p.space).get("prepare")
+            if hook is not None:
+                hooks.setdefault(hook, set()).add(p.space)
+        for hook, names in hooks.items():
+            hook(self, names)
         for space in {
             p.space for p in protocols if p.representation == "population" and SPACES.meta(p.space).get("global_space")
         }:
