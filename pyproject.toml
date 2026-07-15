@@ -16,30 +16,54 @@ authors = [
   { name = "Zach Boldyga" },
 ]
 requires-python = ">=3.11"
+keywords = [
+  "single-cell",
+  "perturb-seq",
+  "perturbation",
+  "differential-expression",
+  "benchmark",
+  "evaluation",
+  "bioinformatics",
+]
 classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
   "Programming Language :: Python :: 3 :: Only",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
+  "Topic :: Scientific/Engineering :: Bio-Informatics",
+  "Typing :: Typed",
 ]
+# Lower bounds are the minimum versions we support (approximate; CI resolves and tests against
+# current releases). torch/geomloss are intentionally NOT here — they are only needed for the
+# Sinkhorn/optimal-transport metrics and live in the optional `sinkhorn` extra below (torch is large).
 dependencies = [
-  "anndata",
-  "geomloss",
-  "h5py",
-  "illico",
-  "numpy",
-  "pandas",
-  "scanpy",
-  "scikit-learn",
-  "scipy",
-  "threadpoolctl",
-  "torch",
+  "anndata>=0.10",
+  "h5py>=3.9",
+  "illico>=0.6",
+  "numpy>=1.26",
+  "pandas>=2.0",
+  "scanpy>=1.10",
+  "scikit-learn>=1.4",
+  "scipy>=1.11",
+  "threadpoolctl>=3.1",
 ]
 urls.Documentation = "https://scperteval.readthedocs.io/"
 urls.Homepage = "https://github.com/Virtual-Cell-Research-Community/scPertEval"
 urls.Source = "https://github.com/Virtual-Cell-Research-Community/scPertEval"
 scripts.scperteval = "scperteval.cli:main"
+
+[project.optional-dependencies]
+# The Sinkhorn / Wasserstein-2 optimal-transport metrics (the `sinkhorn_w2_*` protocols) are the
+# only feature that needs torch + geomloss. Install with:  pip install "scperteval[sinkhorn]"
+sinkhorn = [
+  "geomloss>=0.2.6",
+  "torch>=2.1",
+]
 
 [dependency-groups]
 dev = [
@@ -80,6 +104,9 @@ notebook = [
 
 [tool.hatch]
 build.targets.wheel.packages = [ "src/scperteval" ]
+# Install the `sinkhorn` extra in the test environment so CI exercises the full protocol set
+# (torch/geomloss are an optional extra for end users, but tests still cover their metrics).
+envs.hatch-test.features = [ "sinkhorn" ]
 envs.hatch-test.matrix = [ { python = [ "3.11", "3.12", "3.13", "3.14" ] } ]
 
 [tool.ruff]

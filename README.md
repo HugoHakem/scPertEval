@@ -38,6 +38,14 @@ Or from this repo:
 pip install "scperteval @ git+https://github.com/Virtual-Cell-Research-Community/scPertEval.git"
 ```
 
+The Sinkhorn / optimal-transport metrics (the `sinkhorn_w2_*` protocols) need PyTorch and
+[GeomLoss](https://www.kernel-operations.io/geomloss/), which are optional to keep the base
+install light. Enable them with the `sinkhorn` extra:
+
+```bash
+pip install "scperteval[sinkhorn]"
+```
+
 ## Quick start
 
 From the command line:
