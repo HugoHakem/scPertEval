@@ -62,6 +62,44 @@ def run_protocol(p: Protocol, ctx, calibrator: Calibrator):
     return run(p, ctx, calibrator, needed)
 
 
+def run_all(cfg, protocols, ctx):
+    """Run every protocol over the dataset and collect results (no printing or file I/O).
+
+    Selects the calibrator from ``cfg.output``, warms the context once over *all* protocols
+    (so shared singletons are precomputed before the parallel loop), then runs each protocol.
+    Shared by the CLI's ``calibrate``/``score`` commands and the Python API.
+
+    Parameters
+    ----------
+    cfg : ~scperteval.types.RunConfig
+        Resolved run options; ``cfg.output`` selects the calibrator.
+    protocols : list of ~scperteval.types.Protocol
+        The concrete protocols to evaluate.
+    ctx : ~scperteval.context.Context
+        Per-run context (in ``score`` mode its ``predictions`` must already be attached).
+
+    Returns
+    -------
+    aggregates : dict
+        ``{protocol_name: aggregate_dict}`` across perturbations.
+    rows : list of dict
+        Per-perturbation records for every protocol (raw controls + calibrated score).
+    timed : list of tuple
+        ``(protocol, seconds)`` wall-clock timing for each protocol.
+    """
+    from .calibrators import CALIBRATORS
+
+    calibrator = CALIBRATORS[cfg.output]
+    ctx.warm(protocols)
+    aggregates, rows, timed = {}, [], []
+    for p in protocols:
+        agg, proto_rows, seconds = run_protocol(p, ctx, calibrator)
+        aggregates[p.name] = agg
+        rows += proto_rows
+        timed.append((p, seconds))
+    return aggregates, rows, timed
+
+
 def _finalize(p, calibrator, perts, raws_list):
     """Per-perturbation rows + the aggregate, from each perturbation's raw control values."""
     per_pert = [calibrator.per_pert(raws, p) for raws in raws_list]
@@ -120,24 +158,20 @@ def _run_dataset(p: Protocol, ctx, calibrator: Calibrator, needed: dict):
     return agg, rows, seconds
 
 
-def compute_de_export(ctx, methods):
-    """Per-gene DE matrices for each method, for export.
+def compute_de(ctx):
+    """Per-gene DE matrices for ``ctx.cfg.de_method``, for export.
 
-    Returns ``{method: (statistic, pvalue_adj)}`` matrices (perturbations x genes) for each
-    method's ground-truth-vs-all-perturbed differential expression.
+    Returns ``(statistic, pvalue_adj)`` matrices (perturbations x genes) for the
+    ground-truth-vs-all-perturbed differential expression under the context's DE method.
     """
-    out = {}
-    for method in methods:
-        ctx.cfg.de_method = method
 
-        def work(pert):
-            de = ctx.de(pert, ctx.cfg.truth, "all_perturbed")
-            return de.score, de.pvalue_adj
+    def work(pert):
+        d = ctx.de(pert, ctx.cfg.truth, "all_perturbed")
+        return d.statistic, d.pvalue_adj
 
-        with ThreadPoolExecutor(max_workers=_n_workers(ctx.cfg)) as pool:
-            res = list(pool.map(work, ctx.perturbations))
-        out[method] = (np.vstack([r[0] for r in res]), np.vstack([r[1] for r in res]))
-    return out
+    with ThreadPoolExecutor(max_workers=_n_workers(ctx.cfg)) as pool:
+        res = list(pool.map(work, ctx.perturbations))
+    return np.vstack([r[0] for r in res]), np.vstack([r[1] for r in res])
 
 
 def _check_sources(p: Protocol, roles: dict) -> None:

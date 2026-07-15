@@ -84,7 +84,7 @@ That row is the spec; parameters include:
 |---|---|
 | `centroid` | a 1-D pseudobulk vector (one value per gene) |
 | `population` | a `(cells × genes)` matrix |
-| `de` | a `DEResult` (for the ground truth) / per-gene `\|score\|` ranking (for a prediction) |
+| `de` | a `PerturbationDEResult` (for the ground truth) / per-gene `\|statistic\|` ranking (for a prediction) |
 
 **`scope`** is the independent companion axis — *how many* perturbations the metric sees at once:
 

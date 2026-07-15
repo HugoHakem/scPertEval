@@ -17,7 +17,7 @@
 ## Metrics
 
 Full reference for the built-in metric functions. Each function implements one protocol's
-core computation: it receives two arrays (or `DEResult` objects) and returns a scalar score.
+core computation: it receives two arrays (or `PerturbationDEResult` objects) and returns a scalar score.
 
 ```{eval-rst}
 .. module:: scperteval.protocols.metrics

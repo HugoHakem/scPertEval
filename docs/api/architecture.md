@@ -33,7 +33,7 @@ Three registries, keyed by name and looked up through the `Context`:
   ground-truth DEGs at an adjusted p-value threshold), `pca_<k>`
   ({func}`~scperteval.blocks.spaces.pca_space`, top-k principal components).
 - **DE backends** ({obj}`~scperteval.blocks.de.DE_METHODS`) — differential-expression
-  methods sharing one {class}`~scperteval.types.DEResult` interface: `t-test`
+  methods sharing one {class}`~scperteval.types.PerturbationDEResult` interface: `t-test`
   ({func}`~scperteval.blocks.de.de_ttest`, default, moment-based),
   `t-test_overestim_var` ({func}`~scperteval.blocks.de.de_ttest_overestim`,
   {func}`scanpy.tl.rank_genes_groups`'s conservative variant), `MWU`

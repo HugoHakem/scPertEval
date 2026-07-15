@@ -25,7 +25,7 @@ together at runtime.
 :link: api/types
 :link-type: doc
 
-`RunConfig`, `Protocol`, `Calibrator`, `DEResult`, `Param`, `run_protocol`
+`RunConfig`, `Protocol`, `Calibrator`, `PerturbationDEResult`, `Param`, `run_protocol`
 :::
 
 :::{grid-item-card} {octicon}`checklist;1em;` Protocols

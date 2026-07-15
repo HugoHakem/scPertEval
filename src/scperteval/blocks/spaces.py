@@ -32,6 +32,25 @@ Use :meth:`~scperteval.registry.Registry.register` to add a custom space::
 
 Pass ``global_space=True`` if the transform does not depend on the perturbation
 (so it can be computed once and shared across all perturbations in a run).
+
+**Optional ``prepare`` hook.** A space family whose transform depends on some expensive, shared
+structure (a fitted basis, a trained embedding model) can register a ``prepare`` hook to build
+that structure once, up front, instead of lazily inside the per-perturbation loop::
+
+    @SPACES.register("pca_50", global_space=True, prepare=my_prepare, description="…")
+    def space(X, ctx, pert): ...
+
+- Signature ``prepare(ctx, names) -> None`` — ``names`` is the *set* of that family's variant
+  space names requested in the run (e.g. ``{"pca_30", "pca_50", "pca_100"}``).
+- :meth:`~scperteval.context.Context.warm` calls each distinct hook **once** with all its
+  variants, before any transform runs — so the family sees every variant at once and can build
+  each variant's shared structure eagerly instead of on first use (e.g. fit each requested PCA
+  size; a learned embedding might fit one model per variant). Store the result on ``ctx`` (e.g.
+  ``ctx.pca(...)``, which caches on the shared store).
+- It is **purely an optimisation and must be idempotent**: the transform has to stay correct if
+  the hook never runs (a space run without being declared to ``prepare`` computes lazily), and the
+  hook may be invoked again on an already-warm context. Do no per-perturbation work here — that
+  belongs in the transform.
 """
 
 
@@ -46,7 +65,7 @@ def _field(de, name):
 
 
 def register_de_space(name, field, top=None, threshold=None, description=""):
-    r"""Register a DE-derived gene subset selected from a field of the GT DEResult.
+    r"""Register a DE-derived gene subset selected from a field of the GT PerturbationDEResult.
 
     Exactly one of ``top`` (select top-k by \|value\|) or ``threshold`` (a callable
     returning a boolean mask) must be provided.
@@ -56,8 +75,8 @@ def register_de_space(name, field, top=None, threshold=None, description=""):
     name : str
         Registry key for the new space.
     field : str
-        Attribute of :class:`~scperteval.types.DEResult` to read
-        (e.g. ``"score"``, ``"pvalue_adj"``).
+        Attribute of :class:`~scperteval.types.PerturbationDEResult` to read
+        (e.g. ``"statistic"``, ``"pvalue_adj"``).
     top : int or None
         If given, keep the top-k genes by absolute value of ``field``.
     threshold : Callable or None
@@ -100,7 +119,7 @@ def top_space(k: int) -> str:
     name = f"top_{k}"
     if name not in SPACES:
         register_de_space(
-            name, field="score", top=k, description=f"top {k} genes by ground-truth effect size, per perturbation"
+            name, field="statistic", top=k, description=f"top {k} genes by ground-truth effect size, per perturbation"
         )
     return name
 
@@ -129,6 +148,18 @@ def degs_space(padj: float) -> str:
     return name
 
 
+def _pca_prepare(ctx, names):
+    """Prepare hook for the ``pca_*`` family: fit each requested ``pca_<k>`` up front.
+
+    ``names`` is the set of requested ``pca_<k>`` space names. Each distinct fit-size is fit once
+    and cached independently (see :meth:`~scperteval.context.Context.pca`): sklearn's PCA is not
+    basis-stable across ``n_components``, so a smaller ``pca_k`` cannot be sliced from a larger
+    fit without changing its result. Set iteration order does not matter — every size is fit.
+    """
+    for name in names:
+        ctx.pca(int(name.rsplit("_", 1)[1]))
+
+
 def pca_space(k: int) -> str:
     """top-k principal components (registered on demand).
 
@@ -151,6 +182,7 @@ def pca_space(k: int) -> str:
             name,
             lambda X, ctx, pert, k=k: ctx.pca(k).transform(to_dense(X))[:, :k],
             global_space=True,
+            prepare=_pca_prepare,
             description=f"top {k} principal components (fit on the dataset)",
         )
     return name

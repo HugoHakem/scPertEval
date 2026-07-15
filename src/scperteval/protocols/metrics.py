@@ -12,7 +12,7 @@ Two protocol fields control what the metric receives:
 
 - ``"centroid"`` — 1-D pseudobulk vector, shape ``(G,)``.
 - ``"population"`` — cell matrix, shape ``(n, G)``.
-- ``"de"`` — :class:`~scperteval.types.DEResult` for ground truth; \|score\| ranking for predictions.
+- ``"de"`` — :class:`~scperteval.types.PerturbationDEResult` for ground truth; \|statistic\| ranking for predictions.
 
 **scope** — how many perturbations the metric sees at once:
 
@@ -41,7 +41,7 @@ gt : numpy.ndarray
 prediction : numpy.ndarray
     Predicted pseudobulk profile, shape ``(G,)``.
 ctx : Context
-    Provides per-gene WMSE weights via ``ctx.wmse_weights``."""
+    Per-run context; used to read the ground-truth DE effect sizes for the per-gene weights."""
 
 _POPULATION = """\
 gt : numpy.ndarray
@@ -60,7 +60,7 @@ ctx : Context
     Unused; present for signature compatibility."""
 
 _DE = """\
-gt : ~scperteval.types.DEResult
+gt : ~scperteval.types.PerturbationDEResult
     Ground-truth DE result; ``gt.pvalue_adj`` defines the positive class.
 prediction : numpy.ndarray
     Per-gene absolute DE score ranking from the candidate source, shape ``(G,)``.
@@ -176,7 +176,13 @@ def weighted_mse(gt, prediction, ctx, exp=2.0):
     float
         Non-negative weighted MSE; 0 is perfect.
     """
-    w = ctx.wmse_weights(ctx.current_pert) ** exp
+    # Mejia DEG weights: min-max normalised absolute GT effect size (the ground-truth DE is cached
+    # in ctx.de, keyed by GT source and method), raised to `exp`.
+    s = np.abs(ctx.de(ctx.current_pert, ctx.cfg.truth, "all_perturbed").statistic)
+    finite = np.isfinite(s)
+    lo, hi = s[finite].min(), s[finite].max()
+    weights = np.nan_to_num((s - lo) / (hi - lo) if hi > lo else np.zeros_like(s), nan=0.0)
+    w = weights**exp
     total = w.sum()
     w = w / total if total > 0 else np.full(w.size, 1.0 / w.size)
     return float(np.sum(w * (gt - prediction) ** 2))
@@ -391,7 +397,7 @@ def de_overlap(gt, prediction, ctx, k=50):
     .. math::
 
         \text{Overlap}_k
-        = \frac{|\text{top-}k(|gt.score|) \cap \text{top-}k(pred)|}{k}
+        = \frac{|\text{top-}k(|gt.statistic|) \cap \text{top-}k(pred)|}{k}
 
     Parameters
     ----------
@@ -405,7 +411,7 @@ def de_overlap(gt, prediction, ctx, k=50):
         Fraction of top-k genes shared, in [0, 1]; higher is better.
         Returns ``nan`` if k >= number of genes.
     """
-    truth = np.abs(gt.score)
+    truth = np.abs(gt.statistic)
     if k >= truth.size:
         return float("nan")
     top_truth = np.argpartition(-truth, k - 1)[:k]

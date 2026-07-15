@@ -23,10 +23,12 @@ def _print_summary(cfg, aggregates: dict, calibrator, protocols) -> None:
     print()
 
 
-def _write_rows(cfg, rows: list, timestamp: str) -> Path:
-    """Write per-perturbation rows (raw controls + calibrated score) to a timestamped CSV."""
-    out_dir = Path(cfg.out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
+def rows_frame(cfg, rows: list) -> pd.DataFrame:
+    """Per-perturbation rows plus run-provenance columns, as a DataFrame.
+
+    Shared by the CLI (which writes it to CSV) and the Python API (which returns it), so
+    both produce identical per-perturbation tables.
+    """
     df = pd.DataFrame(rows)
     for col, val in (
         ("dataset", Path(cfg.dataset).stem),
@@ -35,8 +37,21 @@ def _write_rows(cfg, rows: list, timestamp: str) -> Path:
         ("seed", cfg.seed),
     ):
         df[col] = val
-    path = out_dir / f"{Path(cfg.dataset).stem}__{timestamp}__{cfg.output}.csv"
-    df.to_csv(path, index=False)
+    return df
+
+
+def write_rows(cfg, rows: list, timestamp: str) -> Path:
+    """Write per-perturbation rows (raw controls + calibrated score) to a timestamped CSV.
+
+    A single-protocol run (the Python API's one-protocol-per-call) puts the protocol name in the
+    filename so per-protocol calls to one ``out_dir`` don't collide; a multi-protocol CLI run
+    (one CSV holds every protocol) keeps the plain name.
+    """
+    out_dir = Path(cfg.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    tag = f"{cfg.protocols[0]}__" if len(cfg.protocols) == 1 else ""
+    path = out_dir / f"{Path(cfg.dataset).stem}__{tag}{timestamp}__{cfg.output}.csv"
+    rows_frame(cfg, rows).to_csv(path, index=False)
     return path
 
 
@@ -59,7 +74,7 @@ def _write_timing(cfg, timed: list, timestamp: str) -> Path:
     return path
 
 
-def _write_de(cfg, genes, perturbations, results: dict, timestamp: str) -> Path:
+def write_de(cfg, genes, perturbations, results: dict, timestamp: str) -> Path:
     """Write per-gene DE (statistic + adjusted p) per method to an HDF5 file.
 
     Layout: ``genes``, ``perturbations``, and one group per method holding
@@ -69,7 +84,7 @@ def _write_de(cfg, genes, perturbations, results: dict, timestamp: str) -> Path:
 
     out_dir = Path(cfg.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / f"{Path(cfg.dataset).stem}__{timestamp}__de.h5"
+    path = out_dir / f"{Path(cfg.dataset).stem}__{cfg.de_method}__{timestamp}__de.h5"
     with h5py.File(path, "w") as f:
         f.create_dataset("genes", data=np.asarray(genes, dtype="S"))
         f.create_dataset("perturbations", data=np.asarray(perturbations, dtype="S"))

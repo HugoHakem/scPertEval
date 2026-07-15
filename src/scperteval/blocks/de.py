@@ -1,12 +1,12 @@
-"""Differential-expression backends sharing one :class:`~scperteval.types.DEResult` interface.
+"""Differential-expression backends sharing one :class:`~scperteval.types.PerturbationDEResult` interface.
 
-Each backend maps ``(target_cells, reference_cells) → DEResult``. Three backends are
+Each backend maps ``(target_cells, reference_cells) → PerturbationDEResult``. Three backends are
 registered in :data:`DE_METHODS`:
 
 - ``"t-test"`` — Welch's t-test, default and fastest (:func:`de_ttest`).
 - ``"t-test_overestim_var"`` — :func:`scanpy.tl.rank_genes_groups`'s conservative variant
   (:func:`de_ttest_overestim`).
-- ``"MWU"`` — Mann-Whitney U via illico; score is Cliff's delta (:func:`de_mwu`).
+- ``"MWU"`` — Mann-Whitney U via illico; statistic is Cliff's delta (:func:`de_mwu`).
 
 The t-test family is factored through :func:`ttest_from_moments` so the
 runner can cache a shared reference's moments and reuse them cheaply across perturbations.
@@ -19,7 +19,7 @@ import scipy.sparse as sp
 from scipy import stats
 
 from ..registry import Registry
-from ..types import DEResult
+from ..types import PerturbationDEResult
 
 DE_METHODS = Registry("de-method")
 """Registry of DE backends; keys are the ``--de-method`` names.
@@ -27,15 +27,30 @@ DE_METHODS = Registry("de-method")
 Use :meth:`~scperteval.registry.Registry.register` to add a custom backend::
 
     from scperteval.blocks.de import DE_METHODS, bh
-    from scperteval.types import DEResult
+    from scperteval.types import PerturbationDEResult
 
     @DE_METHODS.register("my_test", description="My custom DE test")
     def de_my_test(target, reference):
-        score = ...       # per-gene statistic, shape (G,)
+        statistic = ...   # per-gene statistic, shape (G,)
         pvalue = ...      # per-gene raw p-values, shape (G,)
-        return DEResult(score=score, pvalue=pvalue, pvalue_adj=bh(pvalue))
+        return PerturbationDEResult(statistic=statistic, pvalue=pvalue, pvalue_adj=bh(pvalue))
 
 Then ``--de-method my_test`` routes every DE-dependent unit through it.
+
+**Opting into the moment cache.** A method whose statistic is a function of per-gene
+moments (mean, sample variance, cell count) can declare a ``from_moments`` capability to
+reuse :class:`~scperteval.context.Context`'s shared moment cache — the same optimisation
+that makes ``t-test`` fast (a source's moments are computed once and the all-perturbed
+reference's are served leave-one-out). Register a second callable with the signature
+``(mean_t, var_t, n_t, mean_r, var_r, n_r) -> PerturbationDEResult``::
+
+    @DE_METHODS.register("my_moment_test", description="...", from_moments=my_from_moments)
+    def de_my_moment_test(target, reference):
+        return my_from_moments(*_moments(target), *_moments(reference))
+
+When a method provides ``from_moments`` the context dispatches through it (reading cached
+moments); otherwise it calls the registered cells-based function. The registered function
+stays the single source of truth — no method is privileged by name.
 """
 
 
@@ -99,12 +114,12 @@ def bh(pvalue: np.ndarray) -> np.ndarray:
     return out
 
 
-def ttest_from_moments(mt, vt, nt, mr, vr, nr) -> DEResult:
+def ttest_from_moments(mt, vt, nt, mr, vr, nr) -> PerturbationDEResult:
     """Welch's t-test from pre-computed per-gene moments (:func:`scanpy.tl.rank_genes_groups`'s convention).
 
     Accepts moments directly so the context can cache the reference's moments
-    once and combine them cheaply for every perturbation. The ``score`` field
-    of the returned :class:`~scperteval.types.DEResult` is the t-statistic.
+    once and combine them cheaply for every perturbation. The ``statistic`` field
+    of the returned :class:`~scperteval.types.PerturbationDEResult` is the t-statistic.
 
     Parameters
     ----------
@@ -123,8 +138,8 @@ def ttest_from_moments(mt, vt, nt, mr, vr, nr) -> DEResult:
 
     Returns
     -------
-    ~scperteval.types.DEResult
-        ``score`` is the Welch t-statistic; ``pvalue_adj`` is BH-adjusted.
+    ~scperteval.types.PerturbationDEResult
+        ``statistic`` is the Welch t-statistic; ``pvalue_adj`` is BH-adjusted.
     """
     se2 = vt / nt + vr / nr
     with np.errstate(divide="ignore", invalid="ignore"):
@@ -133,12 +148,21 @@ def ttest_from_moments(mt, vt, nt, mr, vr, nr) -> DEResult:
     t = np.nan_to_num(t, nan=0.0, posinf=0.0, neginf=0.0)
     df = np.where(np.isfinite(df) & (df > 0), df, 1.0)
     pval = np.nan_to_num(2.0 * stats.t.sf(np.abs(t), df), nan=1.0)
-    return DEResult(score=t, pvalue=pval, pvalue_adj=bh(pval))
+    return PerturbationDEResult(statistic=t, pvalue=pval, pvalue_adj=bh(pval))
 
 
-@DE_METHODS.register("t-test", description="Welch's t-test (default) — moment-based and fast")
-def de_ttest(target, reference) -> DEResult:
-    """Welch's t-test between target and reference cell matrices."""
+@DE_METHODS.register(
+    "t-test",
+    description="Welch's t-test (default) — moment-based and fast",
+    from_moments=ttest_from_moments,
+)
+def de_ttest(target, reference) -> PerturbationDEResult:
+    """Welch's t-test between target and reference cell matrices.
+
+    Registered with a ``from_moments`` capability (:func:`ttest_from_moments`), so the
+    per-run :class:`~scperteval.context.Context` computes it from cached per-gene moments
+    instead of re-densifying cells for every comparison — see :data:`DE_METHODS`.
+    """
     return ttest_from_moments(*_moments(target), *_moments(reference))
 
 
@@ -147,7 +171,7 @@ def de_ttest(target, reference) -> DEResult:
     description="scanpy's conservative t-test variant; reference variance scaled by the "
     "target's cell count (selectable backend; not used by any current protocol)",
 )
-def de_ttest_overestim(target, reference) -> DEResult:
+def de_ttest_overestim(target, reference) -> PerturbationDEResult:
     """:func:`scanpy.tl.rank_genes_groups` with ``method='t-test_overestim_var'``.
 
     Identical to Welch's t-test except the reference group's cell count is replaced by the
@@ -161,8 +185,8 @@ def de_ttest_overestim(target, reference) -> DEResult:
 
 
 @DE_METHODS.register("MWU", description="Mann-Whitney U / Cliff's delta effect size (via illico)")
-def de_mwu(target, reference) -> DEResult:
-    """Mann-Whitney U via illico (one-vs-reference); score = Cliff's delta.
+def de_mwu(target, reference) -> PerturbationDEResult:
+    """Mann-Whitney U via illico (one-vs-reference); statistic = Cliff's delta.
 
     illico tests labelled groups in an AnnData against a reference group and
     returns a (group, gene) frame with raw ``p_value`` + U ``statistic``; we read
@@ -193,4 +217,4 @@ def de_mwu(target, reference) -> DEResult:
     u = sub["statistic"].to_numpy(dtype=np.float64)
     pval = np.nan_to_num(sub["p_value"].to_numpy(dtype=np.float64), nan=1.0)
     cliff = 2.0 * u / (nt * nr) - 1.0
-    return DEResult(score=cliff, pvalue=pval, pvalue_adj=bh(pval), extra={"u": u})
+    return PerturbationDEResult(statistic=cliff, pvalue=pval, pvalue_adj=bh(pval), extra={"u": u})

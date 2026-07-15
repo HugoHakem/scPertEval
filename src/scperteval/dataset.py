@@ -20,26 +20,30 @@ class Dataset:
     """Loads the AnnData, splits each perturbation into halves, and serves cell sets."""
 
     def __init__(self, adata, cfg: RunConfig):
+        # Retain only the prepare-scoped values the dataset needs at runtime — NOT the whole
+        # RunConfig. The per-call config lives on the Context; keeping a second RunConfig here
+        # (with stale per-call fields like de_method/output) would be an easy mix-up.
         self.adata = adata
-        self.cfg = cfg
+        self.seed = cfg.seed  # subsampling reproducibility (see _cap)
+        self.control_label = cfg.control_label
         self.var_names = np.asarray(adata.var_names)
         self.pert = np.asarray(adata.obs[cfg.perturbation_key]).astype(str)
-        self.control_idx = np.where(self.pert == cfg.control_label)[0]
-        self._index()
+        self.control_idx = np.where(self.pert == self.control_label)[0]
+        self._index(cfg.min_cells)
 
     @classmethod
     def load(cls, path: str, cfg: RunConfig) -> Dataset:
         """Load a dataset from a preprocessed ``.h5ad`` path."""
         return cls(ad.read_h5ad(path), cfg)
 
-    def _index(self):
-        rng = np.random.default_rng(self.cfg.seed)
+    def _index(self, min_cells: int):
+        rng = np.random.default_rng(self.seed)
         self.halves: dict[str, tuple[np.ndarray, np.ndarray]] = {}
         self.perturbations: list[str] = []
         means = []
-        for p in np.unique(self.pert[self.pert != self.cfg.control_label]):
+        for p in np.unique(self.pert[self.pert != self.control_label]):
             idx = np.where(self.pert == p)[0]
-            if len(idx) < self.cfg.min_cells:
+            if len(idx) < min_cells:
                 continue
             shuffled = idx.copy()
             rng.shuffle(shuffled)
@@ -70,7 +74,7 @@ class Dataset:
 
         The "pool" tag is a fixed reproducibility salt for the draw, not a public name.
         """
-        return self._cap(np.where(self.pert != self.cfg.control_label)[0], cap, "pool")
+        return self._cap(np.where(self.pert != self.control_label)[0], cap, "pool")
 
     def allpert_mean_except(self, pert: str) -> np.ndarray:
         """Mean of all per-perturbation means, excluding ``pert`` (leave-one-out)."""
@@ -92,7 +96,7 @@ class Dataset:
     def _cap(self, idx: np.ndarray, cap: int, *tags) -> np.ndarray:
         if len(idx) <= cap:
             return np.sort(idx)
-        chosen = _seed(self.cfg.seed, *tags).choice(idx, size=cap, replace=False)
+        chosen = _seed(self.seed, *tags).choice(idx, size=cap, replace=False)
         return np.sort(chosen)
 
 
