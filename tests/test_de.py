@@ -7,7 +7,7 @@ import anndata as ad
 import numpy as np
 import scanpy as sc
 
-from scperteval.blocks.de import DE_METHODS, _moments, de_ttest_overestim, ttest_from_moments
+from scperteval.blocks.de import DE_METHODS, _moments, de_ttest_overestim, mejia_weights, ttest_from_moments
 
 
 def _scanpy_overestim(Xt, Xr):
@@ -57,6 +57,27 @@ def test_overestim_var_registered_and_selectable():
     (choices = DE_METHODS.names()) so new protocols can use it."""
     assert "t-test_overestim_var" in DE_METHODS
     assert "t-test_overestim_var" in DE_METHODS.names()
+
+
+def test_mejia_weights_basic():
+    """Min-max normalises |score| to [0, 1]; the largest-magnitude gene gets weight 1."""
+    w = mejia_weights(np.array([-4.0, 1.0, 0.0, 2.0]))
+    assert w[0] == 1.0  # |-4| is the max
+    assert w[2] == 0.0  # |0| is the min
+    assert np.all((w >= 0.0) & (w <= 1.0))
+
+
+def test_mejia_weights_constant_score_is_zero():
+    """No spread to normalise against -> every weight is 0, not NaN/inf."""
+    w = mejia_weights(np.full(5, 3.0))
+    assert np.array_equal(w, np.zeros(5))
+
+
+def test_mejia_weights_handles_nonfinite():
+    """Non-finite entries don't poison the min/max and come back as 0."""
+    w = mejia_weights(np.array([1.0, np.nan, 3.0, np.inf]))
+    assert np.isfinite(w).all()
+    assert w[1] == 0.0  # nan input -> 0 weight
 
 
 def test_overestim_var_runs_through_export_path():

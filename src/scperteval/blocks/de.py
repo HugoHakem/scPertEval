@@ -86,6 +86,32 @@ def _moments(X):
     return m, np.maximum(v, 0.0), n
 
 
+def mejia_weights(score: np.ndarray) -> np.ndarray:
+    """Min-max normalised ``|score|`` across genes :cite:p:`Mejia_2025`.
+
+    The DEG weighting scheme behind the weighted metrics (e.g. ``wmse``): each gene's weight
+    is its share of the strongest observed effect size, in ``[0, 1]``.
+
+    Parameters
+    ----------
+    score : numpy.ndarray
+        Per-gene DE statistic (e.g. a t-statistic), shape ``(G,)``.
+
+    Returns
+    -------
+    numpy.ndarray
+        Weights in ``[0, 1]``, same shape as ``score``; ``0.0`` where ``score`` is
+        non-finite or every finite value is equal.
+    """
+    s = np.abs(score)
+    finite = np.isfinite(s)
+    if not finite.any():
+        return np.zeros_like(s)
+    lo, hi = s[finite].min(), s[finite].max()
+    w = (s - lo) / (hi - lo) if hi > lo else np.zeros_like(s)
+    return np.nan_to_num(w, nan=0.0)
+
+
 def bh(pvalue: np.ndarray) -> np.ndarray:
     """Benjamini-Hochberg adjusted p-values for FDR control :cite:p:`Vollenweider_2026`.
 
