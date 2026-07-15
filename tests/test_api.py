@@ -185,6 +185,14 @@ def test_out_dir_no_collision_across_protocols(dataset_adata, tmp_path):
     assert len(list(tmp_path.glob("*__drf.csv"))) == 2  # distinct filenames, no overwrite
 
 
+def test_out_dir_same_protocol_no_overwrite(dataset_adata, tmp_path):
+    # Two writes of the SAME protocol to one out_dir must not clobber each other (sub-second stamp).
+    p = prep(dataset_adata, "mse")
+    sp.calibrate(p, "mse", out_dir=str(tmp_path))
+    sp.calibrate(p, "mse", out_dir=str(tmp_path))
+    assert len(list(tmp_path.glob("*__drf.csv"))) == 2
+
+
 def test_undeclared_protocol_on_demand(dataset_adata):
     # A PCA protocol not declared to prepare still runs (space computed on first use).
     r = sp.calibrate(prep(dataset_adata, []), "energy_distance_pca_k")

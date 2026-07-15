@@ -13,7 +13,8 @@ import numpy as np
 class RunConfig:
     """Resolved options for a single run."""
 
-    #: Path to the preprocessed ``.h5ad`` file.
+    #: Path to the preprocessed ``.h5ad`` file, or a display name when the API is given an
+    #: in-memory AnnData (used only to label output files and the summary).
     dataset: str
     #: Names of the resolved (concrete) protocols to run.
     protocols: list[str]

@@ -43,10 +43,10 @@ that structure once, up front, instead of lazily inside the per-perturbation loo
 - Signature ``prepare(ctx, names) -> None`` — ``names`` is the *set* of that family's variant
   space names requested in the run (e.g. ``{"pca_30", "pca_50", "pca_100"}``).
 - :meth:`~scperteval.context.Context.warm` calls each distinct hook **once** with all its
-  variants, before any transform runs — so the family sees every variant at once and can size a
-  single shared precompute for all of them (e.g. fit PCA once at ``max(k)``; a learned embedding
-  might fit one model per variant). Store the result on ``ctx`` (e.g. ``ctx.pca(...)``, which
-  caches on the shared store).
+  variants, before any transform runs — so the family sees every variant at once and can build
+  each variant's shared structure eagerly instead of on first use (e.g. fit each requested PCA
+  size; a learned embedding might fit one model per variant). Store the result on ``ctx`` (e.g.
+  ``ctx.pca(...)``, which caches on the shared store).
 - It is **purely an optimisation and must be idempotent**: the transform has to stay correct if
   the hook never runs (a space run without being declared to ``prepare`` computes lazily), and the
   hook may be invoked again on an already-warm context. Do no per-perturbation work here — that
@@ -149,13 +149,15 @@ def degs_space(padj: float) -> str:
 
 
 def _pca_prepare(ctx, names):
-    """Prepare hook for the ``pca_*`` family: fit PCA once at the largest k requested.
+    """Prepare hook for the ``pca_*`` family: fit each requested ``pca_<k>`` up front.
 
-    ``names`` is the set of requested ``pca_<k>`` space names; PCA components are nested,
-    so fitting at ``max(k)`` lets every smaller ``pca_k`` slice from the same fit with no refit.
-    Order-independent (a ``max`` over a set), so ``warm()`` stays deterministic.
+    ``names`` is the set of requested ``pca_<k>`` space names. Each distinct fit-size is fit once
+    and cached independently (see :meth:`~scperteval.context.Context.pca`): sklearn's PCA is not
+    basis-stable across ``n_components``, so a smaller ``pca_k`` cannot be sliced from a larger
+    fit without changing its result. Set iteration order does not matter — every size is fit.
     """
-    ctx.pca(max(int(name.rsplit("_", 1)[1]) for name in names))
+    for name in names:
+        ctx.pca(int(name.rsplit("_", 1)[1]))
 
 
 def pca_space(k: int) -> str:

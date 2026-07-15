@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -40,8 +40,7 @@ class CacheStore:
         self.lock = threading.RLock()
         self.de: dict = {}
         self.mom: dict = {}
-        self.pca: Any = None
-        self.pca_k = 0
+        self.pca: dict = {}  # fit-size -> fitted PCA; each size fit once and never replaced
         self.control_mean: np.ndarray | None = None
         self.reference: Reference | None = None
         self.ref_proj: dict = {}
@@ -278,17 +277,24 @@ class Context:
         return self._store.control_mean
 
     def pca(self, k=50):
-        """A fitted PCA with at least ``k`` components (refit if a larger k is later asked for)."""
-        if self._store.pca is None or self._store.pca_k < k:
+        """A fitted PCA whose top ``k`` components a ``pca_<k>`` space slices.
+
+        Fits are cached per fit-size (``max(k, 50)``) and **never replaced**, so a given ``k``
+        always resolves to the same basis regardless of call order. A later, larger ``k`` adds a
+        separate fit rather than refitting the shared slot — sklearn's PCA is not basis-stable
+        across ``n_components`` (the solver switches, and randomized SVD is not nested), so slicing
+        a smaller ``pca_k`` out of a larger fit would silently change its result and desync anything
+        (e.g. the cached reference projection) already projected through the old basis.
+        """
+        n = max(k, 50)
+        fit = self._store.pca.get(n)
+        if fit is None:
             with self._init_lock:
-                if self._store.pca is None or self._store.pca_k < k:
-                    n = max(k, 50)
+                fit = self._store.pca.get(n)
+                if fit is None:
                     fit = self._fit_pca(n)
-                    # Publish the fit BEFORE the size: a concurrent reader gating on ``pca_k < k``
-                    # (outside the lock) then never sees a bumped size paired with a smaller fit.
-                    self._store.pca = fit
-                    self._store.pca_k = n
-        return self._store.pca
+                    self._store.pca[n] = fit
+        return fit
 
     PCA_FIT_CAP = 50000
 

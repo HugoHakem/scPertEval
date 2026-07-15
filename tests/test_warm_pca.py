@@ -1,9 +1,12 @@
-"""The warm/prepare path fits embedding spaces (PCA) once, sized for the largest k requested.
+"""The warm/prepare path fits each requested PCA size once, and does so stably.
 
-Covers the ``prepare`` hook seam on the space registry: with several PCA dimensions requested,
-PCA must be fit exactly once at ``max(k)`` (components are nested, so smaller ``pca_k`` slice from
-it) and never refit — deterministically, independent of set iteration order. Also checks that
-correctness does not depend on the hook: lazy use with no warm still works.
+Covers the ``prepare`` hook seam on the space registry. sklearn's PCA is not basis-stable across
+``n_components`` (the solver switches, and randomized SVD is not nested), so each requested
+``pca_<k>`` must get its own fit — a smaller ``pca_k`` may never be sliced out of a larger fit, or
+its result silently changes and desyncs anything already projected through the old basis. The tests
+check that every requested size is fit (deterministically, independent of iteration order), that a
+given ``pca_k`` resolves to the same basis regardless of whether a larger fit also exists, and that
+correctness does not depend on the hook (lazy use with no warm still works).
 """
 
 from __future__ import annotations
@@ -30,35 +33,51 @@ def _spy_fit_pca(ctx):
 
 
 def _ctx(ng=120):
-    # ng large enough that pca_50 and pca_100 are both valid (k <= min(n_cells, n_genes)).
+    # ng large enough that pca_50 and pca_100 are both valid (k <= min(n_cells, n_genes)) and,
+    # with ng=120, that pca_50 uses the randomized solver while pca_100 uses full — the non-nested
+    # regime where slicing pca_50 out of the pca_100 fit would change its result.
     cfg = make_cfg()
     return Context(Dataset(make_dataset(ng=ng), cfg), cfg)
 
 
-def test_warm_fits_pca_once_at_max_k():
-    """Two PCA dims requested (pca_50 + a larger pca_100): one fit, at the max k, no refit."""
+def test_warm_fits_each_requested_size():
+    """Two PCA dims requested (pca_50 + pca_100): each size is fit once, none reused by slicing."""
     ctx = _ctx()
     calls = _spy_fit_pca(ctx)
     protocols = resolve_protocols(["energy_distance_pca_k=50", "sinkhorn_w2_pca_k=100"])
     ctx.warm(protocols)
 
-    assert calls == [100], f"expected a single fit at k=100, got {calls}"
+    assert sorted(calls) == [50, 100], f"expected one fit per size, got {calls}"
 
-    # Exercising the projections for both dims must not trigger any further fit.
+    # Exercising the projections for both dims must not trigger any further fit (both are cached).
     ctx.ref_projection("pca_50")
     ctx.ref_projection("pca_100")
-    assert calls == [100], f"projection triggered a refit: {calls}"
-
-    proj = ctx.ref_projection("pca_100")
-    assert proj.shape[1] <= 100
+    assert sorted(calls) == [50, 100], f"projection triggered a refit: {calls}"
 
 
 def test_warm_is_order_independent():
-    """The single fit is sized for the max k regardless of which spec comes first."""
+    """Every requested size is fit regardless of which spec comes first."""
     ctx = _ctx()
     calls = _spy_fit_pca(ctx)
     ctx.warm(resolve_protocols(["sinkhorn_w2_pca_k=100", "energy_distance_pca_k=50"]))
-    assert calls == [100]
+    assert sorted(calls) == [50, 100]
+
+
+def test_pca_50_basis_stable_across_a_larger_fit():
+    """A given ``pca_k`` resolves to the same basis whether or not a larger fit also exists.
+
+    Regression for the refit-desync bug: fitting ``pca_100`` must not change what ``pca_50``
+    (and its cached reference projection) yields.
+    """
+    alone = _ctx()
+    proj_alone = alone.ref_projection("pca_50")
+
+    with_larger = _ctx()
+    with_larger.pca(100)  # a larger fit exists first
+    proj_after = with_larger.ref_projection("pca_50")  # must still use pca_50's own basis
+
+    assert proj_alone.shape == proj_after.shape == (len(alone.reference().cells), 50)
+    assert np.allclose(proj_alone, proj_after), "pca_50 desynced after a larger fit was created"
 
 
 def test_lazy_pca_without_warm_is_correct():

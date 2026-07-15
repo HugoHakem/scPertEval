@@ -167,7 +167,9 @@ def _check_de_method(method: str) -> None:
 
 
 def _stamp() -> str:
-    return datetime.now().strftime("%Y-%m-%dT%H%M%S")
+    # Microsecond resolution: verbs share one handle and may run concurrently, so two writes of the
+    # same protocol to one out_dir must get distinct filenames rather than silently overwriting.
+    return datetime.now().strftime("%Y-%m-%dT%H%M%S%f")
 
 
 # --------------------------------------------------------------------------- public functions
