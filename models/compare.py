@@ -1,8 +1,9 @@
 """Score every model against the same ground truth under both papers' native protocols.
 
-Compares GEARS, scGPT, mean, no_change, and linear against Miller et al. 2025's and
-Ahlmann-Eltze et al. 2025's native protocols, to show the ranking flip that motivates
-scPertEval — see docs/user-guide/reproducing-literature-protocols.md.
+Compares every trained model in models/ (gears, scgpt, presage, sclambda, state, tabicl) plus
+mean, no_change, and linear against Miller et al. 2025's and Ahlmann-Eltze et al. 2025's native
+protocols, to show the ranking flip that motivates scPertEval — see
+docs/user-guide/reproducing-literature-protocols.md.
 
 Concatenates each model's per-fold test predictions (models/data/prepare_split.py's folds) into
 one full-coverage prediction file, builds the two baselines directly from scPertEval's own
@@ -46,7 +47,14 @@ from scperteval.protocols.resolve import resolve_protocols  # noqa: E402
 RAW = HERE / "data" / "smoke_k562_raw.h5ad"
 FOLD_DIR = HERE / "data" / "smoke_k562_folds"
 N_FOLDS = 3
-TRAINED_MODELS = {"gears": HERE / "gears", "scgpt": HERE / "scgpt"}
+TRAINED_MODELS = {
+    "gears": HERE / "gears",
+    "scgpt": HERE / "scgpt",
+    "presage": HERE / "presage",
+    "sclambda": HERE / "sclambda",
+    "state": HERE / "state",
+    "tabicl": HERE / "tabicl",
+}
 
 
 def _paired_diff_per_pert(raws, p):

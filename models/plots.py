@@ -42,10 +42,14 @@ from compare import (  # noqa: E402
 
 OUT = HERE / "plots"
 
-MODELS = ["gears", "scgpt", "mean", "linear", "no_change"]
+MODELS = ["gears", "scgpt", "presage", "sclambda", "state", "tabicl", "mean", "linear", "no_change"]
 COLORS = {
     "gears": "#2a78d6",
     "scgpt": "#1baf7a",
+    "presage": "#d6542a",
+    "sclambda": "#a72a9e",
+    "state": "#2ac2c2",
+    "tabicl": "#c2a12a",
     "mean": "#eda100",
     "linear": "#008300",
     "no_change": "#4a3aa7",
@@ -79,7 +83,7 @@ def load_raw_per_pert() -> dict[str, dict[str, dict[str, float]]]:
     """Every model's/baseline's raw per-perturbation score, for every protocol.
 
     ``{model: {protocol: {perturbation: value}}}`` -- rebuilds the fold-scoped predictions
-    (fast: no training, just re-concatenating already-trained GEARS/scGPT folds and refitting
+    (fast: no training, just re-concatenating every already-trained model's folds and refitting
     the mean/linear baselines) so every plot in this module works from the same per-perturbation
     values models/compare.py's own tables are built from.
     """
