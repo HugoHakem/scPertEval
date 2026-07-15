@@ -26,7 +26,7 @@
     :toctree: ../generated
 
     run_protocol
-    compute_de_export
+    compute_de
 ```
 
 ## Calibrators

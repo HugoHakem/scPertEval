@@ -20,12 +20,18 @@ whether the protocol is sensitive at all.
 For the full internal wiring — datasets, caching, registries, output files — see
 [Architecture](../api/architecture).
 
+You can drive scPertEval two ways over the same engine: the [command-line interface](usage)
+(`scperteval …`, which writes result files) and the native [Python API](python-api)
+(`import scperteval`, which returns in-memory pandas objects). Pick whichever suits your
+workflow — the concepts below apply to both.
+
 ```{toctree}
 :maxdepth: 1
 
 scoring
 calibration
 usage
+python-api
 protocols
 building-blocks
 datasets

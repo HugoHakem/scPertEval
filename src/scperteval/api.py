@@ -57,7 +57,7 @@ class EvalResult:
 
     Attributes
     ----------
-    aggregate : dict of str to float
+    aggregate : dict[str, float]
         The protocol's summary statistics — ``{"mean": …, "median": …}`` for ``drf``/``score``,
         ``{"bds": …}`` for ``bds``.
     per_perturbation : pandas.DataFrame

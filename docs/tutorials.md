@@ -9,13 +9,14 @@ to add one.
 
 notebooks/01_cli_walkthrough
 notebooks/02_preparing_a_dataset
+notebooks/03_python_api
 ```
 
 - **CLI walkthrough** — run scPertEval end-to-end on a tiny synthetic dataset.
 - **Preparing a dataset** — turn a raw perturb-seq `.h5ad` into scPertEval-ready form, worked
   through three real datasets. This notebook downloads large real files, so it is not run in CI.
+- **Python API** — use scPertEval programmatically from a notebook or script.
 
 More coming soon:
 
-- **Python API** — use scPertEval programmatically from a notebook or script
 - **Extending scPertEval** — add a new protocol, feature space, or control source

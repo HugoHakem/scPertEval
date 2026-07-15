@@ -3,6 +3,7 @@
 ```{toctree}
 :hidden:
 
+api/api
 api/architecture
 api/types
 api/protocols
@@ -12,6 +13,14 @@ api/io
 
 ::::{grid} 2
 :gutter: 3
+
+:::{grid-item-card} {octicon}`code;1em;` Python API
+:link: api/api
+:link-type: doc
+
+The public functions: `prepare`, `calibrate`, `score`, `de`, and their result types
+`Prepared` / `EvalResult` / `DatasetDEResults`.
+:::
 
 :::{grid-item-card} {octicon}`workflow;1em;` Architecture
 :link: api/architecture

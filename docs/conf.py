@@ -101,6 +101,7 @@ intersphinx_mapping = {
     "numpy": ("https://numpy.org/doc/stable/", None),
     "scipy": ("https://docs.scipy.org/doc/scipy/", None),
     "sklearn": ("https://scikit-learn.org/stable/", None),
+    "pandas": ("https://pandas.pydata.org/docs/", None),
 }
 
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "**.ipynb_checkpoints"]
@@ -137,4 +138,11 @@ nitpick_ignore = [  # type: ignore
     ("py:class", "Dataset"),
     # Internal classes referenced in type hints but not given their own API page.
     ("py:class", "scperteval.reference.Reference"),
+    ("py:class", "CacheStore"),
+    ("py:class", "scperteval.context.CacheStore"),
+    # NumPy-docstring type modifiers that are text, not resolvable classes.
+    ("py:class", "optional"),
+    ("py:class", "sequence"),
+    # The `pd` alias in annotations doesn't resolve to the `pandas.DataFrame` intersphinx target.
+    ("py:class", "pd.DataFrame"),
 ]
