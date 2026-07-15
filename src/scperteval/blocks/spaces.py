@@ -33,12 +33,24 @@ Use :meth:`~scperteval.registry.Registry.register` to add a custom space::
 Pass ``global_space=True`` if the transform does not depend on the perturbation
 (so it can be computed once and shared across all perturbations in a run).
 
-Embedding-style families (PCA today; learned/UMAP/scVI later) may also register an optional
-``prepare`` hook — a callable ``(ctx, names) -> None`` where ``names`` is the *set* of that
-family's requested space names in a run. :meth:`~scperteval.context.Context.warm` invokes each
-distinct hook once with all its variants, so the family can do a single shared precompute sized
-for the largest variant (e.g. fit PCA once at ``max(k)`` and slice smaller ``pca_k`` from it).
-The hook is purely an optimisation: transforms must stay correct when it never runs.
+**Optional ``prepare`` hook.** A space family whose transform depends on some expensive, shared
+structure (a fitted basis, a trained embedding model) can register a ``prepare`` hook to build
+that structure once, up front, instead of lazily inside the per-perturbation loop::
+
+    @SPACES.register("pca_50", global_space=True, prepare=my_prepare, description="…")
+    def space(X, ctx, pert): ...
+
+- Signature ``prepare(ctx, names) -> None`` — ``names`` is the *set* of that family's variant
+  space names requested in the run (e.g. ``{"pca_30", "pca_50", "pca_100"}``).
+- :meth:`~scperteval.context.Context.warm` calls each distinct hook **once** with all its
+  variants, before any transform runs — so the family sees every variant at once and can size a
+  single shared precompute for all of them (e.g. fit PCA once at ``max(k)``; a learned embedding
+  might fit one model per variant). Store the result on ``ctx`` (e.g. ``ctx.pca(...)``, which
+  caches on the shared store).
+- It is **purely an optimisation and must be idempotent**: the transform has to stay correct if
+  the hook never runs (a space run without being declared to ``prepare`` computes lazily), and the
+  hook may be invoked again on an already-warm context. Do no per-perturbation work here — that
+  belongs in the transform.
 """
 
 

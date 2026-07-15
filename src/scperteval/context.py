@@ -103,10 +103,10 @@ class Context:
         if any(p.representation == "de" for p in protocols):
             self._ensure_ref_sums()
             self._moments("control", None)
-        # Embedding families (e.g. PCA) may register a `prepare` hook: run each distinct hook
-        # once with the full set of its requested variants, so it can precompute once sized for
-        # the largest (fit PCA at max k, not fit-then-refit). Deterministic; runs before the
-        # projection loop below so global spaces never trigger a refit.
+        # A space family may register a `prepare` hook (see the SPACES docstring): run each
+        # distinct hook once with the full set of its requested variant names, so the family can
+        # do its one-time shared precompute before the per-perturbation loop. Runs before the
+        # projection loop below so global spaces are ready when it reads them.
         hooks: dict[Callable, set[str]] = {}
         for p in protocols:
             hook = SPACES.meta(p.space).get("prepare")
