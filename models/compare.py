@@ -44,8 +44,8 @@ import scperteval as sp  # noqa: E402
 from scperteval.calibrators import drf_per_pert  # noqa: E402
 from scperteval.protocols.resolve import resolve_protocols  # noqa: E402
 
-RAW = HERE / "data" / "smoke_k562_raw.h5ad"
-FOLD_DIR = HERE / "data" / "smoke_k562_folds"
+RAW = HERE / "data" / "smoke_k562" / "raw.h5ad"
+FOLD_DIR = HERE / "data" / "smoke_k562" / "folds"
 N_FOLDS = 3
 TRAINED_MODELS = {
     "gears": HERE / "gears",
