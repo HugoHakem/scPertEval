@@ -14,12 +14,13 @@
 [![Build][build-badge]][build-link]
 [![Codecov][codecov-badge]][codecov-link]
 
-scPertEval is a command-line tool for **experimenting with and sharing reference implementations of
-evaluation protocols** in single-cell perturbation studies. The same catalog of protocols backs
-three commands: **`score`** (score a model's predictions against ground truth), **`calibrate`**
-(calibrate a protocol against empirical positive/negative controls per perturbation, reporting the
-**Dynamic Range Fraction (DRF)** and **Bound Discrimination Score (BDS)**), and **`de`** (export
-per-gene differential expression).
+scPertEval is a toolkit for **experimenting with and sharing reference implementations of
+evaluation protocols** in single-cell perturbation studies, usable both as a **command-line
+interface** and as a **native Python API**. The same catalog of protocols backs three actions:
+**`score`** (score a model's predictions against ground truth), **`calibrate`** (calibrate a
+protocol against empirical positive/negative controls per perturbation, reporting the **Dynamic
+Range Fraction (DRF)** and **Bound Discrimination Score (BDS)**), and **`de`** (export per-gene
+differential expression).
 
 Our accompanying publication: TODO_LINK_HERE
 
@@ -39,6 +40,8 @@ pip install "scperteval @ git+https://github.com/Virtual-Cell-Research-Community
 
 ## Quick start
 
+From the command line:
+
 ```bash
 # calibrate protocols against built-in controls (DRF/BDS)
 scperteval calibrate data/wessels23.h5ad -p all --de-method t-test
@@ -47,6 +50,18 @@ scperteval calibrate data/wessels23.h5ad -p all --de-method t-test
 scperteval score data/wessels23.h5ad predictions.h5ad -p all
 
 scperteval list protocols   # also: de-methods | spaces | sources | calibrators
+```
+
+Or from Python — the same protocols, returning results in memory (see the
+[Python API guide](https://scperteval.readthedocs.io/en/latest/user-guide/python-api.html)):
+
+```python
+import scperteval as sp
+
+prep = sp.prepare("data/wessels23.h5ad", "pearson_ctrl")   # read + index once, reusable
+result = sp.calibrate(prep, "pearson_ctrl", de_method="t-test")
+result.aggregate          # {"mean": …, "median": …} — calibrated DRF summary
+result.per_perturbation   # the per-perturbation detail table
 ```
 
 Sample datasets are available at

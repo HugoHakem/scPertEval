@@ -1,4 +1,8 @@
-# Usage
+# Command-line interface
+
+This page covers the `scperteval` command-line interface. To drive the same protocols from
+Python instead — getting results back as in-memory pandas objects — see the
+[Python API](python-api). The input-data requirements below apply to both.
 
 ## Input data
 
@@ -138,19 +142,18 @@ overestim variant is a selectable backend for new protocols; no current protocol
 
 ## Use it from Python
 
-Install with `pip install scperteval` (or, from this repo,
-`pip install "scperteval @ git+https://github.com/Virtual-Cell-Research-Community/scPertEval.git"`).
-The simplest path mirrors the CLI — call it via subprocess, exactly as the figure notebook does:
+Prefer working in a notebook or script? The native [Python API](python-api) runs the same
+protocols in-process and returns results as pandas objects — no subprocess, no output files
+required:
 
 ```python
-import subprocess, sys
+import scperteval as sp
 
-subprocess.run([sys.executable, "-m", "scperteval", "calibrate", "data/wessels23.h5ad",
-                "-p", "all", "--de-method", "t-test", "--out-dir", "results"], check=True)
-# -> results/wessels23__<timestamp>__drf.csv  (raw control values + calibrated DRF per perturbation)
-
-# score predictions against ground truth instead:
-subprocess.run([sys.executable, "-m", "scperteval", "score", "data/wessels23.h5ad",
-                "predictions.h5ad", "-p", "all", "--out-dir", "results"], check=True)
-# -> results/wessels23__<timestamp>__score.csv  (raw metric value per perturbation)
+prep = sp.prepare("data/wessels23.h5ad", "pearson_ctrl")   # read + index once, reusable
+res = sp.calibrate(prep, "pearson_ctrl", de_method="t-test")
+res.aggregate          # {"mean": …, "median": …} — the DRF summary for this protocol
+res.per_perturbation   # the same table the CLI writes to CSV
 ```
+
+See the [Python API guide](python-api) for the prepare-first flow — `prepare` then
+`calibrate` / `score` / `de` — and their result types.

@@ -64,5 +64,5 @@ See [Building blocks](../user-guide/building-blocks) for how to register a new o
 {func}`~scperteval.runner.run_protocol` runs every protocol over every perturbation and,
 driven by the chosen `Calibrator`, writes per-perturbation rows plus aggregates to a
 `scores.csv`. The `scperteval de` command is a separate path:
-{func}`~scperteval.runner.compute_de_export` computes per-gene DE directly from the
+{func}`~scperteval.runner.compute_de` computes per-gene DE directly from the
 `Context` — independent of any `Protocol` or `Calibrator` — and writes it to `de.h5`.
