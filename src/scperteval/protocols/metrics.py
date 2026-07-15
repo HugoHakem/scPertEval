@@ -290,8 +290,8 @@ def sinkhorn_w2(gt, prediction, ctx, blur=0.05):
     if len(gt) == 0 or len(prediction) == 0:
         return float("nan")
     try:
-        import torch
-        from geomloss import SamplesLoss
+        import torch  # pyright: ignore[reportMissingImports]  # optional `sinkhorn` extra
+        from geomloss import SamplesLoss  # pyright: ignore[reportMissingImports]
     except ModuleNotFoundError as e:  # torch/geomloss are the optional `sinkhorn` extra
         raise ModuleNotFoundError(
             "The 'sinkhorn_w2' protocol needs the optional Sinkhorn/optimal-transport dependencies "
