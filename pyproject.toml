@@ -33,6 +33,7 @@ dependencies = [
   "scanpy",
   "scikit-learn",
   "scipy",
+  "threadpoolctl",
   "torch",
 ]
 urls.Documentation = "https://scperteval.readthedocs.io/"
