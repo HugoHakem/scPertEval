@@ -86,6 +86,48 @@ def _moments(X):
     return m, np.maximum(v, 0.0), n
 
 
+def mejia_weights(score: np.ndarray, exp: float = 2.0) -> np.ndarray:
+    r"""Per-gene DEG weights behind the weighted metrics :cite:p:`Mejia_2025`.
+
+    Min-max normalises ``|score|`` across genes to ``[0, 1]`` (each gene's share of the
+    strongest observed effect size), raises it to ``exp``, then normalises the result to a
+    probability distribution over genes:
+
+    .. math::
+
+        w_g \propto \left(\frac{|s_g| - \min_{g'} |s_{g'}|}{\max_{g'} |s_{g'}| - \min_{g'} |s_{g'}|}\right)^{\text{exp}},
+        \qquad \sum_g w_g = 1
+
+    where :math:`s_g` is the gene's DE statistic. Falls back to uniform weights when there is
+    no spread to normalise against (every finite ``|score|`` equal), so weighted metrics stay
+    well-defined.
+
+    Parameters
+    ----------
+    score : numpy.ndarray
+        Per-gene DE statistic (e.g. a t-statistic), shape ``(G,)``. May be signed; only the
+        magnitude matters.
+    exp : float
+        Exponent applied to the min-max normalised effect sizes (default 2.0).
+
+    Returns
+    -------
+    numpy.ndarray
+        Non-negative weights summing to 1, same shape as ``score``. ``NaN`` scores (e.g. a
+        zero-variance gene's t-statistic) contribute ``0``; an all-non-finite input yields
+        all-zero weights.
+    """
+    s = np.abs(score)
+    finite = np.isfinite(s)
+    if not finite.any():
+        return np.zeros_like(s)
+    lo, hi = s[finite].min(), s[finite].max()
+    weights = np.nan_to_num((s - lo) / (hi - lo) if hi > lo else np.zeros_like(s), nan=0.0)
+    w = weights**exp
+    total = w.sum()
+    return w / total if total > 0 else np.full(w.size, 1.0 / w.size)
+
+
 def bh(pvalue: np.ndarray) -> np.ndarray:
     """Benjamini-Hochberg adjusted p-values for FDR control :cite:p:`Vollenweider_2026`.
 

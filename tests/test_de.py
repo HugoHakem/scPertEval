@@ -7,7 +7,7 @@ import anndata as ad
 import numpy as np
 import scanpy as sc
 
-from scperteval.blocks.de import DE_METHODS, _moments, de_ttest_overestim, ttest_from_moments
+from scperteval.blocks.de import DE_METHODS, _moments, de_ttest_overestim, mejia_weights, ttest_from_moments
 
 
 def _scanpy_overestim(Xt, Xr):
@@ -57,6 +57,41 @@ def test_overestim_var_registered_and_selectable():
     (choices = DE_METHODS.names()) so new protocols can use it."""
     assert "t-test_overestim_var" in DE_METHODS
     assert "t-test_overestim_var" in DE_METHODS.names()
+
+
+def test_mejia_weights_basic():
+    """Min-max normalises |score|, raises to `exp`, and returns a per-gene distribution:
+    the largest-magnitude gene carries the most weight, |score|=0 gets none, weights sum to 1."""
+    w = mejia_weights(np.array([-4.0, 1.0, 0.0, 2.0]), exp=2.0)
+    assert np.argmax(w) == 0  # |-4| is the max effect -> most weight
+    assert w[2] == 0.0  # |0| is the min effect -> no weight
+    assert np.all(w >= 0.0)
+    assert w.sum() == 1.0
+    # matches the closed-form: (minmax(|s|) ** exp) normalised to sum 1
+    expected = np.array([1.0, 0.25, 0.0, 0.5]) ** 2.0
+    assert np.allclose(w, expected / expected.sum())
+
+
+def test_mejia_weights_exp_sharpens():
+    """A larger exponent concentrates weight on the strongest-effect genes."""
+    s = np.array([4.0, 2.0, 1.0])
+    assert mejia_weights(s, exp=4.0)[0] > mejia_weights(s, exp=1.0)[0]
+
+
+def test_mejia_weights_constant_score_is_uniform():
+    """No spread to normalise against -> fall back to uniform weights (no NaN/inf)."""
+    w = mejia_weights(np.full(5, 3.0))
+    assert np.allclose(w, np.full(5, 1.0 / 5))
+    assert w.sum() == 1.0
+
+
+def test_mejia_weights_handles_nan():
+    """NaN scores (e.g. a zero-variance gene's t-statistic) don't poison the min/max
+    and come back as 0 weight, leaving a valid distribution over the finite genes."""
+    w = mejia_weights(np.array([1.0, np.nan, 3.0, 2.0]))
+    assert np.isfinite(w).all()
+    assert w[1] == 0.0  # nan input -> 0 weight
+    assert w.sum() == 1.0
 
 
 def test_overestim_var_runs_through_export_path():

@@ -25,6 +25,8 @@ from __future__ import annotations
 import numpy as np
 from sklearn.metrics import average_precision_score, roc_auc_score
 
+from ..blocks.de import mejia_weights
+
 # --- shared parameter blocks, substituted into docstrings at decoration time ---
 
 _CENTROID = """\
@@ -177,14 +179,10 @@ def weighted_mse(gt, prediction, ctx, exp=2.0):
         Non-negative weighted MSE; 0 is perfect.
     """
     # Mejia DEG weights: min-max normalised absolute GT effect size (the ground-truth DE is cached
-    # in ctx.de, keyed by GT source and method), raised to `exp`.
-    s = np.abs(ctx.de(ctx.current_pert, ctx.cfg.truth, "all_perturbed").statistic)
-    finite = np.isfinite(s)
-    lo, hi = s[finite].min(), s[finite].max()
-    weights = np.nan_to_num((s - lo) / (hi - lo) if hi > lo else np.zeros_like(s), nan=0.0)
-    w = weights**exp
-    total = w.sum()
-    w = w / total if total > 0 else np.full(w.size, 1.0 / w.size)
+    # in ctx.de, keyed by GT source and method), raised to `exp`. Factored into the pure
+    # blocks.de.mejia_weights helper so WMSE stays self-contained (no Context weighting method).
+    s = ctx.de(ctx.current_pert, ctx.cfg.truth, "all_perturbed").statistic
+    w = mejia_weights(s, exp=exp)
     return float(np.sum(w * (gt - prediction) ** 2))
 
 
