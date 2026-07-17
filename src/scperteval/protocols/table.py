@@ -28,6 +28,7 @@ overlap_k = Param("k", int, 50)  # passed straight to de_overlap's k
 _PB: dict[str, Any] = dict(group="pseudobulk")
 _LOWER: dict[str, Any] = dict(better="lower", perfect=0.0)
 _DIST: dict[str, Any] = dict(group="distributional", better="lower", perfect=0.0)
+# de: GT tested vs all-perturbed; the negative candidate is tested vs control (hybrid reference).
 _DE: dict[str, Any] = dict(
     group="de",
     reference="all_perturbed",
@@ -42,6 +43,7 @@ _RANK: dict[str, Any] = dict(group="pseudobulk", default_negative="global_mean",
 TABLE = [
     # --- pseudobulk: correlation & error (positive = interpolated duplicate) ---
     Protocol("pearson", M.pearson, representation="centroid", **_PB),
+    # control-centred: each profile relative to the control mean.
     Protocol("pearson_ctrl", M.pearson, representation="centroid", centering="control_mean", **_PB),
     # allpert-centred: all_perturbed_mean would be ~0 after centring, so control is the declared negative.
     Protocol(
@@ -58,6 +60,7 @@ TABLE = [
     Protocol("wmse_exp4", partial(M.weighted_mse, exp=4.0), representation="centroid", **_PB, **_LOWER),
     Protocol("mse_top_k", M.mse, representation="centroid", param=top_k, **_PB, **_LOWER),
     Protocol("mse_degs_padj", M.mse, representation="centroid", param=degs_padj, **_PB, **_LOWER),
+    # allpert-centred pearson on the top-k DEGs (control negative, as pearson_pert).
     Protocol(
         "pearson_pert_top_k",
         M.pearson,
@@ -67,6 +70,7 @@ TABLE = [
         default_negative="control",
         **_PB,
     ),
+    # allpert-centred pearson on the DEG subset (control negative, as pearson_pert).
     Protocol(
         "pearson_pert_degs_padj",
         M.pearson,

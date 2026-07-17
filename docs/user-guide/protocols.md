@@ -76,6 +76,8 @@ That row is the spec; parameters include:
 | `perfect` | the value a flawless prediction attains |
 | `param` | optional — a parameter family (`top_k`, `pca_k`, `degs_padj`, `overlap_k`) that makes the protocol tunable from the CLI; omit for a fixed protocol |
 
+A reference-centred profile — the `centering` source subtracted off — is what's often called a **delta (Δ) vector** in the field (e.g. Δ-from-control).
+
 **`representation`** decides the *shape* of each datapoint — the format `gt` and
 `prediction` arrive in — so you never deal with sampling, references, or projection yourself:
 
