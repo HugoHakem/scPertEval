@@ -76,6 +76,12 @@ def src_control(ctx, pert):
     return ctx.ds.control_cells(ctx.cfg.subsample)
 
 
+@SOURCES.register("control_mean", provides="centroid", description="non-targeting control pseudobulk mean (centroid)")
+def src_control_mean(ctx, pert):
+    """Pseudobulk centroid of the control cells."""
+    return ctx.control_mean()
+
+
 @SOURCES.register(
     "all_perturbed",
     provides="cells",
