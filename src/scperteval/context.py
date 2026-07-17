@@ -168,11 +168,7 @@ class Context:
             v = np.asarray(arr, dtype=np.float64).ravel()
         else:
             v = np.asarray(to_dense(arr), dtype=np.float64).mean(0)
-        if centering == "ctrl":
-            v = v - self.control_mean()
-        elif centering == "allpert":
-            v = v - self.ds.all_perturbed_mean_except(pert)
-        elif centering is not None:  # source-name centering (the center_on path): subtract a named centroid source
+        if centering is not None:  # subtract a named centroid source; None = no centering
             v = v - self._centering_vector(centering, pert)
         return v
 

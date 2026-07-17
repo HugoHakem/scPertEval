@@ -138,3 +138,30 @@ def test_center_on_rejects_unknown_source(dataset_adata):
     prep = sp.prepare(dataset_adata, "pearson", **PREP)
     with pytest.raises(ValueError, match="not registered"):
         sp.calibrate(prep, "pearson", center_on="nope")
+
+
+# --- centering subtracts a named centroid source (the one unified mechanism) --
+
+
+def test_centering_subtracts_named_source(dataset_adata, cfg_factory):
+    from scperteval.context import Context
+    from scperteval.dataset import Dataset
+
+    cfg = cfg_factory()
+    ctx = Context(Dataset(dataset_adata, cfg), cfg)
+    pert = ctx.perturbations[0]
+    base = ctx.centroid(pert, "gt_half", None)
+    np.testing.assert_array_equal(ctx.centroid(pert, "gt_half", "control_mean"), base - ctx.control_mean())
+    np.testing.assert_array_equal(
+        ctx.centroid(pert, "gt_half", "all_perturbed_mean"), base - ctx.ds.all_perturbed_mean_except(pert)
+    )
+
+
+def test_catalog_centering_uses_centroid_source_names():
+    from scperteval.protocols.table import PROTOCOLS
+    from scperteval.sources import SOURCES
+
+    assert PROTOCOLS["pearson_ctrl"].centering == "control_mean"
+    assert PROTOCOLS["pearson_pert"].centering == "all_perturbed_mean"
+    for name in ("control_mean", "all_perturbed_mean"):
+        assert SOURCES.meta(name).get("provides") == "centroid"

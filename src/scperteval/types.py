@@ -125,7 +125,8 @@ class Protocol:
     scope: str = "perturbation"
     #: Feature space applied before scoring (default ``"full"``).
     space: str = "full"
-    #: Baseline subtracted before scoring — ``"ctrl"``, ``"allpert"``, or ``None``.
+    #: A centroid **source name** whose centroid is subtracted before scoring
+    #: (e.g. ``"control_mean"``, ``"all_perturbed_mean"``), or ``None`` for no centering.
     centering: str | None = None
     #: Source used as the reference for the GT DE computation (default ``"all_perturbed"``).
     reference: str = "all_perturbed"

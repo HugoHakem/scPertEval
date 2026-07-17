@@ -85,7 +85,7 @@ sp.calibrate(prep, "pearson", center_on="my_baseline")              # ... as a c
 built-in, e.g. `"global_mean"`). Because centering is protocol identity, this **mints a named
 variant** `<protocol>_center_<name>` — recorded in `EvalResult` and any CSV — rather than silently
 overriding the catalog protocol. It also works on {func}`~scperteval.api.score`. (The CLI can't pass
-arrays; centering on named sources there is deferred to the broader centering-source redesign.)
+arrays, so `center_on` is Python-API-only.)
 
 {func}`~scperteval.api.calibrate` returns an {class}`~scperteval.api.EvalResult`:
 

@@ -42,10 +42,15 @@ _RANK: dict[str, Any] = dict(group="pseudobulk", default_negative="global_mean",
 TABLE = [
     # --- pseudobulk: correlation & error (positive = interpolated duplicate) ---
     Protocol("pearson", M.pearson, representation="centroid", **_PB),
-    Protocol("pearson_ctrl", M.pearson, representation="centroid", centering="ctrl", **_PB),
+    Protocol("pearson_ctrl", M.pearson, representation="centroid", centering="control_mean", **_PB),
     # allpert-centred: all_perturbed_mean would be ~0 after centring, so control is the declared negative.
     Protocol(
-        "pearson_pert", M.pearson, representation="centroid", centering="allpert", default_negative="control", **_PB
+        "pearson_pert",
+        M.pearson,
+        representation="centroid",
+        centering="all_perturbed_mean",
+        default_negative="control",
+        **_PB,
     ),
     Protocol("mse", M.mse, representation="centroid", **_PB, **_LOWER),
     Protocol("wmse_exp1", partial(M.weighted_mse, exp=1.0), representation="centroid", **_PB, **_LOWER),
@@ -57,7 +62,7 @@ TABLE = [
         "pearson_pert_top_k",
         M.pearson,
         representation="centroid",
-        centering="allpert",
+        centering="all_perturbed_mean",
         param=top_k,
         default_negative="control",
         **_PB,
@@ -66,7 +71,7 @@ TABLE = [
         "pearson_pert_degs_padj",
         M.pearson,
         representation="centroid",
-        centering="allpert",
+        centering="all_perturbed_mean",
         param=degs_padj,
         default_negative="control",
         **_PB,

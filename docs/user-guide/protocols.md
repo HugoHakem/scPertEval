@@ -70,7 +70,7 @@ That row is the spec; parameters include:
 | `representation` | the shape of each datapoint your function receives (see below) |
 | `scope` | `"perturbation"` (default) or `"dataset"` — how many perturbations at once (see below) |
 | `space` | which features to score — `full` (default), or a feature space like `top_50` |
-| `centering` | a baseline subtracted before scoring, e.g. `"ctrl"` (default: none) |
+| `centering` | a centroid **source name** to subtract before scoring, e.g. `"control_mean"` or `"all_perturbed_mean"` (default: none) |
 | `default_positive` / `default_negative` | optional — declare a control default only when the row deviates from the generic default for its representation; omit otherwise (controls are resolved at runtime, see **Control sources** under [Building blocks](#building-blocks--the-palette)) |
 | `better` | `"higher"` or `"lower"` — which direction is an improvement |
 | `perfect` | the value a flawless prediction attains |
