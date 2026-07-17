@@ -106,7 +106,7 @@ PROTOCOL_SPECS = [
 
 def concat_fold_predictions(model_dir: Path, n_folds: int = N_FOLDS) -> ad.AnnData:
     """One model's per-fold test predictions, concatenated into full gene-coverage."""
-    parts = [ad.read_h5ad(model_dir / "smoke_data" / f"smoke_k562_predictions_fold{i}.h5ad") for i in range(n_folds)]
+    parts = [ad.read_h5ad(model_dir / "predictions" / "smoke_k562" / f"fold_{i}.h5ad") for i in range(n_folds)]
     return ad.concat(parts)
 
 
@@ -134,20 +134,20 @@ def build_all_predictions() -> dict[str, Path]:
     """
     paths = {}
     for name, model_dir in TRAINED_MODELS.items():
-        out = model_dir / "smoke_data" / "smoke_k562_predictions_all.h5ad"
+        out = model_dir / "predictions" / "smoke_k562" / "all.h5ad"
         concat_fold_predictions(model_dir).write_h5ad(out)
         paths[name] = out
 
-    baselines_dir = HERE / "baselines" / "smoke_data"
+    baselines_dir = HERE / "baselines" / "predictions" / "smoke_k562"
     baselines_dir.mkdir(parents=True, exist_ok=True)
     for name, fold_baseline_fn in FOLD_SCOPED_BASELINES.items():
-        out = baselines_dir / f"smoke_k562_predictions_{name}.h5ad"
+        out = baselines_dir / f"{name}.h5ad"
         concat_fold_baseline(fold_baseline_fn).write_h5ad(out)
         paths[name] = out
     for name in BASELINES:
         if name in FOLD_SCOPED_BASELINES:
             continue  # superseded by the fold-scoped version above
-        out = baselines_dir / f"smoke_k562_predictions_{name}.h5ad"
+        out = baselines_dir / f"{name}.h5ad"
         build_predictions(name, str(RAW)).write_h5ad(out)
         paths[name] = out
     return paths
