@@ -93,6 +93,26 @@ class Dataset:
         """Pseudobulk centroid of the control cells."""
         return np.asarray(self.adata.X[self.control_idx].mean(0)).ravel()
 
+    def control_hvg_dispersion(self) -> np.ndarray:
+        """Per-gene normalized dispersion of the control cells (scanpy's ``"seurat"`` HVG statistic)."""
+        import scanpy as sc
+
+        view = ad.AnnData(X=to_dense(self.adata.X[self.control_idx]))
+        df = sc.pp.highly_variable_genes(view, flavor="seurat", inplace=False)
+        assert df is not None  # inplace=False always returns a DataFrame
+        return df["dispersions_norm"].to_numpy()
+
+    def perturbed_gene_indices(self) -> np.ndarray:
+        """``var_names`` indices of every gene targeted by some perturbation in the dataset.
+
+        Perturbation labels are gene symbols matching ``var_names``; combinations are
+        ``+``-delimited (e.g. ``"GENE1+GENE2"``, see docs/user-guide/datasets.md). A token that
+        doesn't match any ``var_names`` entry (e.g. a non-gene treatment label) is skipped.
+        """
+        pos = {g: i for i, g in enumerate(self.var_names)}
+        idx = {pos[gene] for pert in self.perturbations for gene in pert.split("+") if gene in pos}
+        return np.array(sorted(idx))
+
     def _cap(self, idx: np.ndarray, cap: int, *tags) -> np.ndarray:
         if len(idx) <= cap:
             return np.sort(idx)
