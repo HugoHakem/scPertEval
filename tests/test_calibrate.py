@@ -57,7 +57,7 @@ def test_de_protocol_calibrates(dataset_adata, cfg_factory):
 
 
 def test_heg_k_protocols_resolve_and_calibrate(dataset_adata, cfg_factory):
-    for name in ("pearson_heg_k", "pearson_ctrl_heg_k", "l2_heg_k"):
+    for name in ("pearson_ctrl_heg_k", "l2_heg_k"):
         agg, rows, _ = _run(name, "drf", dataset_adata, cfg_factory())
         assert np.isfinite(agg["mean"]), name
         assert len(rows) == 4
@@ -68,16 +68,13 @@ def test_heg_k_protocols_resolve_and_calibrate(dataset_adata, cfg_factory):
 
 def test_miller_r2_and_weighted_protocols_resolve_and_calibrate(dataset_adata, cfg_factory):
     names = (
-        "pearson_ctrl_top_k",
         "pearson_ctrl_degs_padj",
         "weighted_pearson_ctrl_exp2",
         "weighted_pearson_pert_exp2",
         "r2_ctrl",
-        "r2_ctrl_top_k",
         "r2_ctrl_degs_padj",
         "weighted_r2_ctrl_exp2",
         "r2_pert",
-        "r2_pert_top_k",
         "r2_pert_degs_padj",
         "weighted_r2_pert_exp2",
         "nir",

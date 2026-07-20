@@ -85,15 +85,12 @@ TABLE = [
         **_PB,
     ),
     # --- Ahlmann-Eltze et al. 2025: top-1000 control-expressed (highly-expressed) genes ---
-    Protocol("pearson_heg_k", M.pearson, representation="centroid", param=heg_k, **_PB),
     Protocol("pearson_ctrl_heg_k", M.pearson, representation="centroid", centering="control_mean", param=heg_k, **_PB),
     Protocol("l2_heg_k", M.l2, representation="centroid", param=heg_k, **_PB, **_LOWER),
     # --- Miller et al. 2025 / Vollenweider & Bühlmann 2026: R2 and DE-weighted delta
-    # correlations, each in three gene-set variants (all genes / DEG top-k / DEG padj / DE
-    # effect-size-weighted) — MSE's own three variants are mse / mse_top_k+mse_degs_padj /
-    # wmse_exp1-4 above; PearsonDeltaPerturbMean's are pearson_pert / pearson_pert_top_k+
-    # pearson_pert_degs_padj / weighted_pearson_pert_exp2 below.
-    Protocol("pearson_ctrl_top_k", M.pearson, representation="centroid", centering="control_mean", param=top_k, **_PB),
+    # correlations, each in three gene-set variants (all genes / DEG padj / DE effect-size-
+    # weighted) — PearsonDeltaPerturbMean's are pearson_pert / pearson_pert_degs_padj /
+    # weighted_pearson_pert_exp2 below.
     Protocol(
         "pearson_ctrl_degs_padj", M.pearson, representation="centroid", centering="control_mean", param=degs_padj, **_PB
     ),
@@ -113,7 +110,6 @@ TABLE = [
         **_PB,
     ),
     Protocol("r2_ctrl", M.r2, representation="centroid", centering="control_mean", **_PB),
-    Protocol("r2_ctrl_top_k", M.r2, representation="centroid", centering="control_mean", param=top_k, **_PB),
     Protocol("r2_ctrl_degs_padj", M.r2, representation="centroid", centering="control_mean", param=degs_padj, **_PB),
     Protocol(
         "weighted_r2_ctrl_exp2",
@@ -127,15 +123,6 @@ TABLE = [
         M.r2,
         representation="centroid",
         centering="all_perturbed_mean",
-        default_negative="control",
-        **_PB,
-    ),
-    Protocol(
-        "r2_pert_top_k",
-        M.r2,
-        representation="centroid",
-        centering="all_perturbed_mean",
-        param=top_k,
         default_negative="control",
         **_PB,
     ),
