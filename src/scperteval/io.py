@@ -8,18 +8,22 @@ import numpy as np
 import pandas as pd
 
 
-def _print_summary(cfg, aggregates: dict, calibrator, protocols) -> None:
-    """Print a formatted table of aggregate scores for every protocol."""
+def _print_summary(cfg, aggregates: dict, calibrator, protocols, controls: dict) -> None:
+    """Print a formatted table of aggregate scores (and resolved controls) for every protocol."""
     name = Path(cfg.dataset).stem
-    print(f"\n{name} · {cfg.de_method} · subsample={cfg.subsample} · seed={cfg.seed} · output={cfg.output}\n")
+    print(f"\n{name} · {cfg.de_method} · subsample={cfg.subsample} · seed={cfg.seed} · calibrator={cfg.calibrator}\n")
     agg_keys = sorted({k for v in aggregates.values() for k in v})
-    header = f"{'protocol':26s} {'representation':14s} {'space':9s} " + " ".join(f"{k:>9s}" for k in agg_keys)
+    header = f"{'protocol':26s} {'representation':14s} {'space':9s} {'+/- controls':33s} " + " ".join(
+        f"{k:>9s}" for k in agg_keys
+    )
     print(header)
     print("-" * len(header))
     for p in protocols:
         vals = aggregates.get(p.name, {})
         cells = " ".join(f"{vals.get(k, float('nan')):>9.3f}" for k in agg_keys)
-        print(f"{p.name:26s} {p.representation:14s} {p.space:9s} {cells}")
+        c = controls[p.name]
+        ctrl = f"+{c['positive']}/-{c['negative']}"
+        print(f"{p.name:26s} {p.representation:14s} {p.space:9s} {ctrl:33s} {cells}")
     print()
 
 
@@ -50,7 +54,7 @@ def write_rows(cfg, rows: list, timestamp: str) -> Path:
     out_dir = Path(cfg.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     tag = f"{cfg.protocols[0]}__" if len(cfg.protocols) == 1 else ""
-    path = out_dir / f"{Path(cfg.dataset).stem}__{tag}{timestamp}__{cfg.output}.csv"
+    path = out_dir / f"{Path(cfg.dataset).stem}__{tag}{timestamp}__{cfg.calibrator}.csv"
     rows_frame(cfg, rows).to_csv(path, index=False)
     return path
 

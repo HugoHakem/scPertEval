@@ -14,7 +14,7 @@ from .dataset import Dataset
 from .predictions import PredictionSet
 from .protocols.resolve import _concrete, _resolve_token, available, resolve_protocols  # noqa: F401 (re-exported)
 from .protocols.table import TABLE
-from .runner import compute_de, run_all
+from .runner import _resolve_candidates, compute_de, run_all
 from .sources import SOURCES
 from .types import RunConfig
 
@@ -23,11 +23,12 @@ def _evaluate(cfg: RunConfig, protocols, ctx, quiet: bool) -> None:
     """Run every protocol over the dataset, print the summary, and write the CSV.
 
     Shared by ``calibrate`` and ``score`` (prediction vs ground truth); they differ only in
-    how ``ctx`` is built and which calibrator ``cfg.output`` selects.
+    how ``ctx`` is built and which calibrator ``cfg.calibrator`` selects.
     """
     aggregates, rows, timed = run_all(cfg, protocols, ctx)
     if not quiet:
-        io._print_summary(cfg, aggregates, CALIBRATORS[cfg.output], protocols)
+        controls = {p.name: _resolve_candidates(p, cfg) for p in protocols}
+        io._print_summary(cfg, aggregates, CALIBRATORS[cfg.calibrator], protocols, controls)
     stamp = datetime.now().strftime("%Y-%m-%dT%H%M%S")
     path = io.write_rows(cfg, rows, stamp)
     print(f"-> {path}")
@@ -46,7 +47,7 @@ def cmd_calibrate(args) -> None:
         seed=args.seed,
         positive=args.positive,
         negative=args.negative,
-        output=args.output,
+        calibrator=args.calibrator,
         out_dir=args.out_dir,
         workers=args.workers,
         perturbation_key=args.perturbation_key,
@@ -67,7 +68,7 @@ def cmd_score(args) -> None:
         de_method=args.de_method,
         subsample=args.subsample,
         seed=args.seed,
-        output="score",
+        calibrator="score",
         out_dir=args.out_dir,
         workers=args.workers,
         perturbation_key=args.perturbation_key,
@@ -99,7 +100,7 @@ def cmd_de(args) -> None:
         control_label=args.control_label,
     )
     ctx = Context(Dataset.load(cfg.dataset, cfg), cfg)
-    ctx._ensure_ref_sums()
+    ctx._ensure_reference_sums()
     statistic, pvalue_adj = compute_de(ctx)
     stamp = datetime.now().strftime("%Y-%m-%dT%H%M%S")
     path = io.write_de(cfg, ctx.ds.var_names, ctx.perturbations, {args.method: (statistic, pvalue_adj)}, stamp)
@@ -114,11 +115,13 @@ def cmd_list(args) -> None:
         return [fmt(n, registry.meta(n)) for n in registry.names()]
 
     if args.what == "protocols":
+        default_cfg = RunConfig(dataset="", protocols=[])  # no override: shows the resolved default controls
 
         def descr(p):
             scope = "" if p.scope == "perturbation" else f", {p.scope}-wide"
             knob = f"{p.param.name}=…" if p.parameterised else f"space={p.space}"
-            return f"{p.group}, {p.representation}{scope}, {knob}"
+            c = _resolve_candidates(p, default_cfg)
+            return f"{p.group}, {p.representation}{scope}, {knob}, controls +{c['positive']}/-{c['negative']}"
 
         def extra_note(p):
             if p.requires_extra is None:
@@ -166,7 +169,7 @@ def build_parser() -> argparse.ArgumentParser:
     calibrate.add_argument("--positive", default="auto")
     calibrate.add_argument("--negative", default="auto")
     calibrate.add_argument(
-        "--output",
+        "--calibrator",
         default="drf",
         choices=[n for n, c in CALIBRATORS.items() if "prediction" not in c.requires],
         help="how per-perturbation values are calibrated (drf/bds)",

@@ -33,7 +33,7 @@ class RunConfig:
     #: Path to a model-predictions ``.h5ad`` for prediction-scoring mode; ``None`` selects calibration mode (default).
     predictions: str | None = None
     #: Calibrator to apply — ``"drf"`` or ``"bds"`` (default ``"drf"``).
-    output: str = "drf"
+    calibrator: str = "drf"
     #: Directory for output CSV files (default ``"results"``).
     out_dir: str = "results"
     #: Number of worker threads; 0 auto-detects (default 0).
@@ -125,7 +125,8 @@ class Protocol:
     scope: str = "perturbation"
     #: Feature space applied before scoring (default ``"full"``).
     space: str = "full"
-    #: Baseline subtracted before scoring — ``"ctrl"``, ``"allpert"``, or ``None``.
+    #: A centroid **source name** whose centroid is subtracted before scoring
+    #: (e.g. ``"control_mean"``, ``"all_perturbed_mean"``), or ``None`` for no centering.
     centering: str | None = None
     #: Source used as the reference for the GT DE computation (default ``"all_perturbed"``).
     reference: str = "all_perturbed"
@@ -135,10 +136,10 @@ class Protocol:
     better: str = "higher"
     #: Score a flawless prediction attains (e.g. 1.0 for correlations, 0.0 for errors).
     perfect: float = 1.0
-    #: Positive control source name (default ``"auto"``, deferring to the protocol).
-    positive: str = "auto"
-    #: Negative control source name (default ``"auto"``, deferring to the protocol).
-    negative: str = "auto"
+    #: Declared default positive control; ``None`` uses the representation's generic default.
+    default_positive: str | None = None
+    #: Declared default negative control; ``None`` uses the representation's generic default.
+    default_negative: str | None = None
     #: Display group for ``scperteval list protocols`` (e.g. ``"pseudobulk"``).
     group: str = ""
     #: If set, makes the protocol tunable from the CLI; ``None`` for fixed protocols.
@@ -170,7 +171,7 @@ class Calibrator:
 
     #: Registry key and output column name (e.g. ``"drf"``).
     name: str
-    #: Control roles needed — typically ``("positive", "negative")``.
+    #: Calibrator inputs (candidate names) it needs — e.g. ``("positive", "negative")``.
     requires: tuple[str, ...]
     #: ``(raws: dict, protocol: Protocol) -> float`` — combines raw control values into one per-perturbation calibrated score.
     per_pert: Callable

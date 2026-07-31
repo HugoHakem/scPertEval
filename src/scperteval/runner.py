@@ -3,14 +3,22 @@
 from __future__ import annotations
 
 import os
+import warnings
 from concurrent.futures import ThreadPoolExecutor
 from time import perf_counter
 
 import numpy as np
 from threadpoolctl import threadpool_limits
 
-from .sources import SOURCES
 from .types import Calibrator, Protocol
+
+#: Generic (positive, negative) control defaults keyed on ``representation`` — the base tier of
+#: control resolution, used unless a protocol declares a default or a run overrides one.
+GENERIC_CONTROLS = {
+    "centroid": ("interpolated", "all_perturbed_mean"),
+    "population": ("tech_dup", "all_perturbed"),
+    "de": ("tech_dup", "all_perturbed"),
+}
 
 
 def _n_workers(cfg) -> int:
@@ -18,15 +26,17 @@ def _n_workers(cfg) -> int:
     return cfg.workers if cfg.workers > 0 else max(1, min(16, (os.cpu_count() or 2) - 2))
 
 
-def _resolve_roles(p: Protocol, cfg) -> dict:
-    """Map each candidate calibrator role to a source name.
+def _resolve_candidates(p: Protocol, cfg) -> dict:
+    """Map each calibrator input (candidate name) to a source name.
 
-    ``positive`` / ``negative`` come from the protocol (or a CLI override); ``prediction``
+    Two-tier resolution for ``positive`` / ``negative``: an explicit run override (``cfg``) wins,
+    else the protocol's declared default, else the representation's generic default. ``prediction``
     is always the model-prediction source (used by the ``score`` calibrator).
     """
+    gen_pos, gen_neg = GENERIC_CONTROLS[p.representation]
     return {
-        "positive": cfg.positive if cfg.positive != "auto" else p.positive,
-        "negative": cfg.negative if cfg.negative != "auto" else p.negative,
+        "positive": cfg.positive if cfg.positive != "auto" else (p.default_positive or gen_pos),
+        "negative": cfg.negative if cfg.negative != "auto" else (p.default_negative or gen_neg),
         "prediction": "prediction",
     }
 
@@ -56,9 +66,10 @@ def run_protocol(p: Protocol, ctx, calibrator: Calibrator):
     seconds : float
         Wall-clock time for this protocol.
     """
-    roles = _resolve_roles(p, ctx.cfg)
-    needed = {role: roles[role] for role in calibrator.requires}
-    _check_sources(p, needed)
+    candidates = _resolve_candidates(p, ctx.cfg)
+    needed = {name: candidates[name] for name in calibrator.requires}
+    _check_sources(p, needed, ctx)
+    ctx.candidates = candidates  # the resolved negative drives _de_view's neg_reference choice
     run = _run_dataset if p.scope == "dataset" else _run_per_perturbation
     return run(p, ctx, calibrator, needed)
 
@@ -66,14 +77,14 @@ def run_protocol(p: Protocol, ctx, calibrator: Calibrator):
 def run_all(cfg, protocols, ctx):
     """Run every protocol over the dataset and collect results (no printing or file I/O).
 
-    Selects the calibrator from ``cfg.output``, warms the context once over *all* protocols
+    Selects the calibrator from ``cfg.calibrator``, warms the context once over *all* protocols
     (so shared singletons are precomputed before the parallel loop), then runs each protocol.
     Shared by the CLI's ``calibrate``/``score`` commands and the Python API.
 
     Parameters
     ----------
     cfg : ~scperteval.types.RunConfig
-        Resolved run options; ``cfg.output`` selects the calibrator.
+        Resolved run options; ``cfg.calibrator`` selects the calibrator.
     protocols : list of ~scperteval.types.Protocol
         The concrete protocols to evaluate.
     ctx : ~scperteval.context.Context
@@ -90,7 +101,8 @@ def run_all(cfg, protocols, ctx):
     """
     from .calibrators import CALIBRATORS
 
-    calibrator = CALIBRATORS[cfg.output]
+    calibrator = CALIBRATORS[cfg.calibrator]
+    _warn_declared_overrides(cfg, protocols)
     # nothing else is running yet to oversubscribe, unlike the per-perturbation loop below
     # (which is why scperteval otherwise pins BLAS/OpenMP to 1 thread, see __init__.py) -- so
     # warm()'s precompute can safely use more than one
@@ -105,14 +117,42 @@ def run_all(cfg, protocols, ctx):
     return aggregates, rows, timed
 
 
-def _finalize(p, calibrator, perts, raws_list):
-    """Per-perturbation rows + the aggregate, from each perturbation's raw control values."""
+def _warn_declared_overrides(cfg, protocols) -> None:
+    """One consolidated warning when a run override replaces a protocol's *declared* default.
+
+    Overriding a merely *generic* default is normal experimentation and stays silent; only a
+    declared deviation (e.g. ``rank``'s ``global_mean``) is loud when replaced.
+    """
+    parts = []
+    for role in ("positive", "negative"):
+        override = getattr(cfg, role)
+        if override == "auto":
+            continue
+        by_declared: dict[str, list[str]] = {}
+        for p in protocols:
+            declared = getattr(p, f"default_{role}")
+            if declared is not None and declared != override:
+                by_declared.setdefault(declared, []).append(p.name)
+        if by_declared:
+            groups = "; ".join(f"{', '.join(names)} (was {decl!r})" for decl, names in by_declared.items())
+            parts.append(f"{role}={override!r} overrides the declared default for {groups}")
+    if parts:
+        warnings.warn("; ".join(parts), stacklevel=2)
+
+
+def _finalize(p, calibrator, perts, raws_list, needed):
+    """Per-perturbation rows + the aggregate, from each perturbation's raw control values.
+
+    Each row records both the resolved control *source* names (``needed``, one column per calibrator
+    input) and their raw metric *values* (``raw_{name}``), alongside the calibrated score.
+    """
     per_pert = [calibrator.per_pert(raws, p) for raws in raws_list]
     rows = [
         {
             "protocol": p.name,
             "perturbation": pert,
-            **{f"raw_{role}": raws[role] for role in raws},
+            **needed,
+            **{f"raw_{name}": raws[name] for name in raws},
             calibrator.name: value,
         }
         for pert, raws, value in zip(perts, raws_list, per_pert)
@@ -126,14 +166,14 @@ def _run_per_perturbation(p: Protocol, ctx, calibrator: Calibrator, needed: dict
     def work(pert):
         ctx.current_pert = pert
         gt = ctx.view(pert, ctx.cfg.truth, p)
-        return {role: p.metric(gt, ctx.view(pert, src, p), ctx) for role, src in needed.items()}
+        return {name: p.metric(gt, ctx.view(pert, src, p), ctx) for name, src in needed.items()}
 
     perts = ctx.perturbations
     start = perf_counter()
     with ThreadPoolExecutor(max_workers=_n_workers(ctx.cfg)) as pool:
         raws_list = list(pool.map(work, perts))
     seconds = perf_counter() - start
-    agg, rows = _finalize(p, calibrator, perts, raws_list)
+    agg, rows = _finalize(p, calibrator, perts, raws_list, needed)
     return agg, rows, seconds
 
 
@@ -155,11 +195,11 @@ def _run_dataset(p: Protocol, ctx, calibrator: Calibrator, needed: dict):
 
     start = perf_counter()
     gt = collect(ctx.cfg.truth)
-    scores = {role: p.metric(gt, collect(src), ctx) for role, src in needed.items()}
+    scores = {name: p.metric(gt, collect(src), ctx) for name, src in needed.items()}
     seconds = perf_counter() - start
 
-    raws_list = [{role: float(scores[role][i]) for role in needed} for i in range(len(perts))]
-    agg, rows = _finalize(p, calibrator, perts, raws_list)
+    raws_list = [{name: float(scores[name][i]) for name in needed} for i in range(len(perts))]
+    agg, rows = _finalize(p, calibrator, perts, raws_list, needed)
     return agg, rows, seconds
 
 
@@ -179,11 +219,21 @@ def compute_de(ctx):
     return np.vstack([r[0] for r in res]), np.vstack([r[1] for r in res])
 
 
-def _check_sources(p: Protocol, roles: dict) -> None:
-    if p.representation in ("population", "de"):
-        for role, src in roles.items():
-            if SOURCES.meta(src).get("provides") != "cells":
-                raise ValueError(
-                    f"{p.name}: {role} source {src!r} provides "
-                    f"{SOURCES.meta(src).get('provides')}, but a single-cell protocol needs cells"
-                )
+def _check_sources(p: Protocol, candidates: dict, ctx) -> None:
+    """Validate the resolved control sources: known, and single-cell where the representation requires it.
+
+    Resolution goes through ``ctx`` so per-handle user sources (from ``prepare(sources=...)``) are
+    recognised alongside the built-in registry. Centroid protocols accept both cells and centroid
+    sources (cells are pooled into a centroid), so only ``population``/``de`` protocols demand
+    ``provides="cells"`` — a user centroid vector used there still hits the clear error below.
+    """
+    for name, src in candidates.items():
+        if not ctx.has_source(src):
+            raise ValueError(
+                f"{p.name}: unknown {name} control source {src!r}; valid sources: {', '.join(ctx.source_names())}"
+            )
+        if p.representation in ("population", "de") and ctx.source_meta(src).get("provides") != "cells":
+            raise ValueError(
+                f"{p.name}: {name} source {src!r} provides "
+                f"{ctx.source_meta(src).get('provides')!r}, but a single-cell protocol needs cells"
+            )
