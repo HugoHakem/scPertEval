@@ -14,7 +14,7 @@ depend on the perturbation (so it can be computed once and shared):
 ```python
 @SPACES.register("hvg_100", global_space=True, description="100 highest-variance genes")
 def space_hvg(X, ctx, pert):
-    keep = ...                       # indices of the genes to keep
+    keep = ...  # indices of the genes to keep
     return to_dense(X[:, keep])
 ```
 
@@ -30,7 +30,7 @@ Register it with `@DE_METHODS.register` in [`src/scperteval/blocks/de.py`](https
 ```python
 @DE_METHODS.register("my_test", description="…")
 def de_my_test(target, reference):
-    statistic, pvalue = ...          # per-gene statistic and raw p-value
+    statistic, pvalue = ...  # per-gene statistic and raw p-value
     return PerturbationDEResult(statistic=statistic, pvalue=pvalue, pvalue_adj=bh(pvalue))
 ```
 
@@ -44,7 +44,7 @@ Register it with `@SOURCES.register` in [`src/scperteval/sources.py`](https://gi
 ```python
 @SOURCES.register("my_baseline", provides="centroid", description="…")
 def src_my_baseline(ctx, pert):
-    return ...                       # a 1-D centroid (or cells, if provides="cells")
+    return ...  # a 1-D centroid (or cells, if provides="cells")
 ```
 
 Use it as a control via `positive=`/`negative=` in a row, or `--positive`/`--negative` at
@@ -58,8 +58,9 @@ cross-perturbation aggregate. Add a `Calibrator` to the `CALIBRATORS` dict in
 
 ```python
 CALIBRATORS["my_score"] = Calibrator(
-    "my_score", ("positive", "negative"),
-    per_pert=lambda raws, p: ...,          # raws["positive"], raws["negative"] -> one number
+    "my_score",
+    ("positive", "negative"),
+    per_pert=lambda raws, p: ...,  # raws["positive"], raws["negative"] -> one number
     aggregate=lambda v: {"my_score": float(np.nanmean(v))},
     description="…",
 )

@@ -20,8 +20,15 @@ Two files define each protocol:
   (`"higher"`/`"lower"`), and the `perfect` score:
 
   ```python
-  Protocol("mse", M.mse, representation="centroid",
-           positive="interpolated", negative="all_perturbed_mean", better="lower", perfect=0.0)
+  Protocol(
+      "mse",
+      M.mse,
+      representation="centroid",
+      positive="interpolated",
+      negative="all_perturbed_mean",
+      better="lower",
+      perfect=0.0,
+  )
   ```
 
 The next section breaks these arguments down while building one up from scratch.
@@ -52,9 +59,15 @@ Here is a complete new protocol: mean absolute error on the standard pseudobulk 
 2. Add a row to [`src/scperteval/protocols/table.py`](https://github.com/Virtual-Cell-Research-Community/scPertEval/blob/main/src/scperteval/protocols/table.py):
 
    ```python
-   Protocol("mae", M.mae, representation="centroid",
-            positive="interpolated", negative="all_perturbed_mean",
-            better="lower", perfect=0.0)
+   Protocol(
+       "mae",
+       M.mae,
+       representation="centroid",
+       positive="interpolated",
+       negative="all_perturbed_mean",
+       better="lower",
+       perfect=0.0,
+   )
    ```
 
 Run it with `scperteval calibrate data.h5ad -p mae`. That is the whole protocol: MAE between each
@@ -212,13 +225,21 @@ p < padj) for the space, and `overlap_k` to feed an integer straight to the metr
 function receives `(cells × genes)` matrices; pair it with the single-cell controls:
 
 ```python
-def my_mmd(gt, prediction, ctx):      # gt, prediction are (cells × genes)
+def my_mmd(gt, prediction, ctx):  # gt, prediction are (cells × genes)
     ...
 ```
 
 ```python
-Protocol("my_mmd_top50", M.my_mmd, representation="population", space="top_50",
-         positive="tech_dup", negative="all_perturbed", better="lower", perfect=0.0)
+Protocol(
+    "my_mmd_top50",
+    M.my_mmd,
+    representation="population",
+    space="top_50",
+    positive="tech_dup",
+    negative="all_perturbed",
+    better="lower",
+    perfect=0.0,
+)
 ```
 
 This changes two pieces at once — the `representation` (so the function sees cells) and the controls
