@@ -11,7 +11,7 @@ description = "Evaluation Protocols for Perturbation Studies: per-metric DRF/BDS
 readme = "README.md"
 license = { file = "LICENSE" }
 maintainers = [
-  { name = "Zach Boldyga" },
+  { name = "Zach Boldyga", email = "zboldyga@gmail.com" },
   { name = "Hugo Hakem", email = "hakem@ebi.ac.uk" },
 ]
 # The authors of the paper that introduces scPertEval, in publication order — see CITATION.cff.
@@ -36,7 +36,7 @@ keywords = [
   "bioinformatics",
 ]
 classifiers = [
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 4 - Beta",
   "Intended Audience :: Science/Research",
   "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
