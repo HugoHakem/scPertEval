@@ -29,6 +29,8 @@ _LOWER: dict[str, Any] = dict(better="lower", perfect=0.0)
 _DIST: dict[str, Any] = dict(
     group="distributional", positive="tech_dup", negative="all_perturbed", better="lower", perfect=0.0
 )
+# Distributional, but backed by geomloss/torch — only available with the `sinkhorn` extra.
+_OT: dict[str, Any] = dict(**_DIST, requires_extra="sinkhorn")
 _DE: dict[str, Any] = dict(
     group="de",
     positive="tech_dup",
@@ -68,8 +70,8 @@ TABLE = [
     Protocol("unbiased_mmd_median_pca_k", M.unbiased_mmd_median, representation="population", param=pca_k, **_DIST),
     Protocol("energy_distance_top_k", M.energy_distance, representation="population", param=top_k, **_DIST),
     Protocol("energy_distance_pca_k", M.energy_distance, representation="population", param=pca_k, **_DIST),
-    Protocol("sinkhorn_w2_top_k", M.sinkhorn_w2, representation="population", param=top_k, **_DIST),
-    Protocol("sinkhorn_w2_pca_k", M.sinkhorn_w2, representation="population", param=pca_k, **_DIST),
+    Protocol("sinkhorn_w2_top_k", M.sinkhorn_w2, representation="population", param=top_k, **_OT),
+    Protocol("sinkhorn_w2_pca_k", M.sinkhorn_w2, representation="population", param=pca_k, **_OT),
     # --- differential expression: GT DEGs vs prediction ranking ---
     Protocol("de_auprc", M.de_auprc, representation="de", **_DE),
     Protocol("de_auroc", M.de_auroc, representation="de", **_DE),
