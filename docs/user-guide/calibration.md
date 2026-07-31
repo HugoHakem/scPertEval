@@ -80,13 +80,13 @@ gives:
 
 | protocol | DRF (mean) | DRF (median) | BDS |
 |---|---|---|---|
-| `pearson_ctrl` | 0.388 | 0.409 | 0.962 |
+| `pearson_ctrl` | 0.389 | 0.414 | 0.930 |
 | `unbiased_mmd_median_pca_k=20` | 0.942 | 1.000 | 0.994 |
 | `de_overlap_k=10` | 0.077 | 0.000 | 0.382 |
 
 Each row is a different regime. `unbiased_mmd_median_pca_k=20` is strong on both counts: it
 almost always orders the controls correctly (BDS 0.994) *and* recovers most of the available
-range (DRF 0.942). `pearson_ctrl` is directionally reliable (BDS 0.962) but converts that into
+range (DRF 0.942). `pearson_ctrl` is directionally reliable (BDS 0.930) but converts that into
 only ~39% of the dynamic range — correct, yet a blunt instrument on this dataset.
 `de_overlap_k=10` fails the gate outright: at BDS 0.382 the positive control loses to the
 negative more often than it wins.
