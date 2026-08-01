@@ -1,6 +1,8 @@
 # Changelog
 
-## 0.1.0 (unreleased)
+## Unreleased
+
+## 0.1.0
 
 First release of scPertEval — reference implementations of single-cell perturbation evaluation
 protocols, usable from the command line and as a native Python API.
