@@ -15,6 +15,9 @@ requirements-local.txt
 # Run outputs
 results/
 
+# Local predictions/data pulled in from scPertEval-models to feed the benchmark tutorial
+models/
+
 # Editor / OS
 .idea/
 .vscode/
