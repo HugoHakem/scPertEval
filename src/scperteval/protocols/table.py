@@ -55,7 +55,7 @@ TABLE = [
         M.pearson,
         representation="centroid",
         centering="all_perturbed_mean",
-        default_negative="control",
+        default_negative="control_mean",
         **_PB,
     ),
     Protocol("mse", M.mse, representation="centroid", **_PB, **_LOWER),
@@ -71,7 +71,7 @@ TABLE = [
         representation="centroid",
         centering="all_perturbed_mean",
         param=top_k,
-        default_negative="control",
+        default_negative="control_mean",
         **_PB,
     ),
     # allpert-centred pearson on the DEG subset (control negative, as pearson_pert).
@@ -81,7 +81,7 @@ TABLE = [
         representation="centroid",
         centering="all_perturbed_mean",
         param=degs_padj,
-        default_negative="control",
+        default_negative="control_mean",
         **_PB,
     ),
     # --- Ahlmann-Eltze et al. 2025: top-1000 control-expressed (highly-expressed) genes ---
@@ -106,7 +106,7 @@ TABLE = [
         partial(M.weighted_pearson, exp=2.0),
         representation="centroid",
         centering="all_perturbed_mean",
-        default_negative="control",
+        default_negative="control_mean",
         **_PB,
     ),
     Protocol("r2_ctrl", M.r2, representation="centroid", centering="control_mean", **_PB),
@@ -123,7 +123,7 @@ TABLE = [
         M.r2,
         representation="centroid",
         centering="all_perturbed_mean",
-        default_negative="control",
+        default_negative="control_mean",
         **_PB,
     ),
     Protocol(
@@ -132,7 +132,7 @@ TABLE = [
         representation="centroid",
         centering="all_perturbed_mean",
         param=degs_padj,
-        default_negative="control",
+        default_negative="control_mean",
         **_PB,
     ),
     Protocol(
@@ -140,7 +140,7 @@ TABLE = [
         partial(M.weighted_r2, exp=2.0),
         representation="centroid",
         centering="all_perturbed_mean",
-        default_negative="control",
+        default_negative="control_mean",
         **_PB,
     ),
     # --- cross-perturbation retrieval rank (dataset-wide over centroids) ---
