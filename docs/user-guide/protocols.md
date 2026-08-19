@@ -120,14 +120,20 @@ in each, with descriptions:
 
 ```bash
 $ scperteval list spaces
-degs_0.05  — ground-truth DEGs at adjusted p < 0.05, per perturbation
-full       — all genes, no transform
-pca_50     — top 50 principal components (fit on the dataset)
-top_50     — top 50 genes by ground-truth effect size, per perturbation
+degs_0.05       — ground-truth DEGs at adjusted p < 0.05, per perturbation
+full            — all genes, no transform
+heg_1000        — top 1000 genes by control-condition expression
+hvg_2000        — top 2000 genes by control-condition normalized dispersion
+pca_50          — top 50 principal components (fit on the dataset)
+perturbed_genes — genes targeted by a perturbation in the dataset
+top_50          — top 50 genes by ground-truth effect size, per perturbation
 ```
 
-`top_<k>` / `pca_<k>` / `degs_<padj>` are parameterised families (the defaults are shown);
-a protocol template picks the value. If the space you need isn't here, see
+`top_<k>` / `degs_<padj>` / `pca_<k>` / `heg_<k>` / `hvg_<k>` are parameterised families (the
+defaults are shown); a protocol template picks the value. Every space above except `full` and
+`pca_<k>` selects a *subset* of the genes, and any two or more of those can be combined into a
+new space — `combine_space("miller_panel", hvg_space(8192), perturbed_genes_space())` builds the
+HVG ∪ perturbed-genes panel. If the space you need isn't here, see
 [Add a feature space](building-blocks.md#add-a-feature-space).
 
 **DE methods** (the `--de-method` choice)

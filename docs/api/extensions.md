@@ -41,10 +41,16 @@ DE backends, feature spaces, control sources, and calibrators.
     :toctree: ../generated
 
     SPACES
+    space_full
+    register_subset_space
     register_de_space
     top_space
-    pca_space
     degs_space
+    pca_space
+    heg_space
+    hvg_space
+    perturbed_genes_space
+    combine_space
 ```
 
 ## DE backends

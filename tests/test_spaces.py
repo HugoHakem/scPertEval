@@ -1,15 +1,37 @@
-"""Gene-subset feature spaces: heg_space, hvg_space, perturbed_space, and combine_space."""
+"""Gene-subset feature spaces: heg, hvg, perturbed_genes, and combine_space.
+
+Also covers the ``indices`` registry capability those spaces are built on: it is what makes a
+space composable, so the composition tests double as its contract tests.
+"""
 
 from __future__ import annotations
+
+from dataclasses import replace
 
 import anndata as ad
 import numpy as np
 import pytest
 from conftest import make_cfg
 
-from scperteval.blocks.spaces import SPACES, combine_space, heg_space, hvg_space, perturbed_space
+from scperteval.blocks.spaces import (
+    SPACES,
+    combine_space,
+    heg_space,
+    hvg_space,
+    perturbed_genes_space,
+    top_space,
+)
+from scperteval.calibrators import CALIBRATORS
 from scperteval.context import Context
 from scperteval.dataset import Dataset
+from scperteval.predictions import PredictionSet
+from scperteval.protocols.table import PROTOCOLS
+from scperteval.runner import run_protocol
+
+
+def _rule(name, ctx, pert):
+    """The gene indices ``name`` selects — its registered ``indices`` rule."""
+    return SPACES.meta(name)["indices"](ctx, pert)
 
 
 def test_heg_space_picks_highest_control_expression_genes():
@@ -84,10 +106,25 @@ def test_perturbed_gene_indices_matches_var_names_and_skips_non_gene_labels():
 
     cfg = make_cfg(min_cells=5)
     ds = Dataset(adata, cfg)
-    assert sorted(ds.perturbed_gene_indices().tolist()) == [1, 2, 4]
+    idx = ds.perturbed_gene_indices()
+    assert sorted(idx.tolist()) == [1, 2, 4]
+    assert np.issubdtype(idx.dtype, np.integer)  # float indices would fail to index X
 
     ctx = Context(ds, cfg)
-    assert sorted(ctx.perturbed_genes().tolist()) == [1, 2, 4]
+    assert sorted(ctx.perturbed_gene_indices().tolist()) == [1, 2, 4]
+
+
+def test_perturbed_gene_indices_raises_when_no_label_is_a_gene():
+    """A drug/compound dataset has no targeted genes -- fail loudly, don't score an empty panel."""
+    rng = np.random.default_rng(0)
+    ng = 6
+    adata = ad.AnnData(rng.poisson(1.0, size=(30, ng)).astype(np.float32))
+    adata.var_names = [f"g{i}" for i in range(ng)]
+    adata.obs["perturbation"] = ["control"] * 10 + ["drugX"] * 10 + ["drugY"] * 10
+
+    cfg = make_cfg(min_cells=5)
+    with pytest.raises(ValueError, match="no perturbation label matches a gene"):
+        Dataset(adata, cfg).perturbed_gene_indices()
 
 
 def _heg_and_perturbed_dataset():
@@ -106,34 +143,96 @@ def _heg_and_perturbed_dataset():
     return Context(Dataset(adata, cfg), cfg)
 
 
-def test_combine_space_union_of_heg_and_perturbed():
+@pytest.mark.parametrize(
+    ("op", "expected"),
+    [
+        ("union", [0, 3, 5, 6, 8]),  # {3, 6, 8} | {0, 3, 5}
+        ("intersect", [3]),  # {3, 6, 8} & {0, 3, 5}
+        ("diff", [6, 8]),  # {3, 6, 8} - {0, 3, 5}
+    ],
+)
+def test_combine_space_applies_the_set_operation(op, expected):
     ctx = _heg_and_perturbed_dataset()
-    name = combine_space(heg_space(3), perturbed_space())
-    assert name == "heg_3+perturbed"
-    out = SPACES[name](ctx.ds.cells("g5"), ctx, "g5")
-    assert out.shape[1] == 5  # {3, 6, 8} | {0, 3, 5} == {0, 3, 5, 6, 8}
+    name = combine_space(f"heg3_{op}_pert", heg_space(3), perturbed_genes_space(), op=op)
+    assert sorted(_rule(name, ctx, "g5").tolist()) == expected
+    assert SPACES[name](ctx.ds.cells("g5"), ctx, "g5").shape[1] == len(expected)
 
 
-def test_combine_space_intersect_of_heg_and_perturbed():
+def test_combine_space_composes_composites():
+    """A composite carries ``indices`` too, so it can be composed again -- and nesting is explicit."""
     ctx = _heg_and_perturbed_dataset()
-    name = combine_space(heg_space(3), perturbed_space(), op="intersect")
-    assert name == "heg_3&perturbed"
-    out = SPACES[name](ctx.ds.cells("g5"), ctx, "g5")
-    assert out.shape[1] == 1  # {3, 6, 8} & {0, 3, 5} == {3}
+    heg, pert, hvg = heg_space(3), perturbed_genes_space(), hvg_space(4)
+    inner = combine_space("heg3_minus_pert", heg, pert, op="diff")
+    assert sorted(_rule(inner, ctx, "g5").tolist()) == [6, 8]
+
+    # (heg_3 \ perturbed_genes) U hvg_4 and heg_3 \ (perturbed_genes U hvg_4) are different sets,
+    # and each caller names its own panel, so neither can silently shadow the other.
+    left = combine_space("left_grouping", inner, hvg, op="union")
+    outer = combine_space("pert_or_hvg", pert, hvg, op="union")
+    right = combine_space("right_grouping", heg, outer, op="diff")
+
+    hvg_idx = set(_rule(hvg, ctx, "g5").tolist())
+    assert set(_rule(left, ctx, "g5").tolist()) == {6, 8} | hvg_idx
+    assert set(_rule(right, ctx, "g5").tolist()) == {3, 6, 8} - ({0, 3, 5} | hvg_idx)
+    assert _rule(left, ctx, "g5").tolist() != _rule(right, ctx, "g5").tolist()
 
 
-def test_combine_space_diff_of_heg_and_perturbed():
+def test_combine_space_folds_three_spaces_left_to_right():
     ctx = _heg_and_perturbed_dataset()
-    name = combine_space(heg_space(3), perturbed_space(), op="diff")
-    assert name == "heg_3-perturbed"
-    out = SPACES[name](ctx.ds.cells("g5"), ctx, "g5")
-    assert out.shape[1] == 2  # {3, 6, 8} - {0, 3, 5} == {6, 8}
+    heg, pert, hvg = heg_space(3), perturbed_genes_space(), hvg_space(4)
+    name = combine_space("three_way_diff", heg, pert, hvg, op="diff")
+    expected = set(_rule(heg, ctx, "g5").tolist()) - set(_rule(pert, ctx, "g5").tolist())
+    expected -= set(_rule(hvg, ctx, "g5").tolist())
+    assert set(_rule(name, ctx, "g5").tolist()) == expected
+
+
+def test_combine_space_is_global_only_when_every_part_is():
+    """global_space gates the shared reference projection, so one per-perturbation part poisons it."""
+    assert SPACES.meta(combine_space("both_global", heg_space(3), perturbed_genes_space()))["global_space"]
+    mixed = combine_space("one_per_pert", top_space(50), heg_space(3))
+    assert not SPACES.meta(mixed)["global_space"]
 
 
 def test_combine_space_rejects_bad_input():
     with pytest.raises(ValueError, match="at least two"):
-        combine_space(heg_space(3))
+        combine_space("too_few", heg_space(3))
     with pytest.raises(ValueError, match="unknown op"):
-        combine_space(heg_space(3), perturbed_space(), op="xor")
+        combine_space("bad_op", heg_space(3), perturbed_genes_space(), op="xor")
     with pytest.raises(ValueError, match="indices metadata"):
-        combine_space("full", perturbed_space())  # "full" isn't a gene-subset space
+        combine_space("with_full", "full", perturbed_genes_space())  # "full" isn't a gene subset
+    with pytest.raises(KeyError, match="unknown space"):
+        combine_space("with_typo", "heg_99999", perturbed_genes_space())
+
+
+def test_composed_space_runs_end_to_end_through_the_runner(cfg_factory):
+    """The whole path: warm() -> cached reference projection -> per-perturbation scoring."""
+    rng = np.random.default_rng(0)
+    ng, n_ctrl, n_pert = 80, 300, 120
+    genes = [f"g{i}" for i in range(ng)]
+    parts = [rng.poisson(1.0, (n_ctrl, ng)).astype(np.float32)]
+    labels = ["control"] * n_ctrl
+    for lab, block in {"g0": range(0, 6), "g1+g2": range(15, 21), "g3": range(30, 36)}.items():
+        x = rng.poisson(1.0, (n_pert, ng)).astype(np.float32)
+        x[:, list(block)] += 6.0
+        parts.append(x)
+        labels += [lab] * n_pert
+    adata = ad.AnnData(np.log1p(np.vstack([parts[0], *parts[1:]])))
+    adata.var_names = genes
+    adata.obs["perturbation"] = labels
+
+    space = combine_space("panel", hvg_space(10), perturbed_genes_space())
+    proto = replace(PROTOCOLS["energy_distance_top_k"], name="ed_panel", space=space, param=None)
+
+    cfg = cfg_factory(truth="gt_all_cells", calibrator="score")
+    ds = Dataset(adata, cfg)
+    ctx = Context(ds, cfg)
+    sub = adata[np.asarray(adata.obs["perturbation"]).astype(str) != "control"].copy()
+    pred = ad.AnnData(np.asarray(sub.X, dtype=np.float32), obs=sub.obs.copy())
+    pred.var_names = genes
+    ctx.predictions = PredictionSet(pred, ds, cfg)
+
+    ctx.warm([proto])
+    assert space in ctx._store.reference_projections  # global composite: projected once, shared
+    agg, rows, _ = run_protocol(proto, ctx, CALIBRATORS["score"])
+    assert len(rows) == 3
+    assert np.isfinite(agg["mean"])

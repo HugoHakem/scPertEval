@@ -6,23 +6,27 @@ Two registration patterns:
 - **Fixed space** — one decorated function (:func:`space_full`).
 - **Parameterised family** — a factory that registers ``name_<value>`` on demand:
   ``top_<k>`` (:func:`top_space`), ``degs_<padj>`` (:func:`degs_space`),
-  ``pca_<k>`` (:func:`pca_space`), ``heg_<k>`` (:func:`heg_space`), ``hvg_<k>`` (:func:`hvg_space`),
-  ``perturbed`` (:func:`perturbed_space`, no parameters).
+  ``pca_<k>`` (:func:`pca_space`), ``heg_<k>`` (:func:`heg_space`), ``hvg_<k>``
+  (:func:`hvg_space`), ``perturbed_genes`` (:func:`perturbed_genes_space`, no parameters).
 
 Default instances (``top_50``, ``degs_0.05``, ``pca_50``, ``heg_1000``, ``hvg_2000``,
-``perturbed``) are created at import; these are what ``scperteval list spaces`` shows.
+``perturbed_genes``) are created at import; these are what ``scperteval list spaces`` shows.
 
-**Composing spaces.** Every space above except :func:`space_full`/:func:`pca_space` (which
-aren't gene subsets — one keeps every gene, the other transforms to components) selects a gene
-*subset*, and registers the ``(ctx, pert) -> indices`` callable that picked it as registry
-metadata. :func:`combine_space` composes two or more such spaces by a set operation (union,
-intersect, or diff) into a new registered space, e.g. Miller et al. 2025's HVG ∪
-perturbed-genes gene panel: ``combine_space(hvg_space(8192), perturbed_space())``.
+**Gene-subset spaces and composition.** Every space above except :func:`space_full` and
+:func:`pca_space` (which aren't gene subsets — one keeps every gene, the other transforms to
+components) is registered through :func:`register_subset_space`, which stores the space's
+*selection rule* — ``indices(ctx, pert) -> gene positions`` — as registry metadata rather than
+only the finished transform. :func:`combine_space` uses those rules to build a new space from
+two or more existing ones by a set operation, e.g. the HVG ∪ perturbed-genes gene panel of
+:cite:t:`Miller_2025`::
+
+    combine_space("miller_panel", hvg_space(8192), perturbed_genes_space())
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
+from functools import partial
 
 import numpy as np
 
@@ -36,13 +40,20 @@ Use :meth:`~scperteval.registry.Registry.register` to add a custom space::
 
     from scperteval.blocks.spaces import SPACES, to_dense
 
-    @SPACES.register("hvg_100", global_space=True, description="100 highest-variance genes")
-    def space_hvg(X, ctx, pert):
-        keep = ...                    # indices of the 100 genes to keep
+    @SPACES.register("my_panel", global_space=True, description="a hand-picked gene panel")
+    def space_my_panel(X, ctx, pert):
+        keep = ...                    # indices of the genes to keep
         return to_dense(X[:, keep])
 
 Pass ``global_space=True`` if the transform does not depend on the perturbation
 (so it can be computed once and shared across all perturbations in a run).
+
+**Optional ``indices`` capability.** A space that selects a *subset of genes* (rather than
+transforming them, as ``pca_<k>`` does) should register through
+:func:`register_subset_space` instead of by hand. That records the selection rule under the
+``indices`` metadata key, which is what marks the space as composable: :func:`combine_space`
+builds new spaces by applying set operations to those rules. A space registered without it
+still works everywhere else — it just can't be composed.
 
 **Optional ``prepare`` hook.** A space family whose transform depends on some expensive, shared
 structure (a fitted basis, a trained embedding model) can register a ``prepare`` hook to build
@@ -74,29 +85,87 @@ def space_full(X, ctx, pert):
     return to_dense(X)
 
 
-# --- Parameterised families: a factory registers name_<value> on demand ---
+# --- Gene-subset spaces: one registration helper shared by every subset family ---
+
+
+def register_subset_space(name, indices, *, global_space=False, description="") -> str:
+    """Register a space that keeps a subset of the genes, selected by ``indices``.
+
+    The transform is always ``to_dense(X[:, indices(ctx, pert)])``; only the selection rule
+    differs between subset spaces, so it is the only thing a caller supplies. The rule is also
+    stored as ``indices`` registry metadata, which is what lets :func:`combine_space` compose
+    spaces (see the :data:`SPACES` docstring). Registration is idempotent — an already-registered
+    ``name`` is left untouched.
+
+    Parameters
+    ----------
+    name : str
+        Registry key for the space (e.g. ``"heg_1000"``).
+    indices : Callable
+        ``indices(ctx, pert) -> np.ndarray`` returning **integer positions into the full gene
+        axis** — not into some earlier subset — so that rules from different spaces are directly
+        comparable. Called once per perturbation per protocol; put anything expensive and shared
+        behind a :class:`~scperteval.context.Context` cache. May ignore ``pert``.
+    global_space : bool
+        ``True`` if the selection does not depend on ``pert``, so it can be computed once and
+        shared across every perturbation in a run.
+    description : str
+        Human-readable description shown by ``scperteval list spaces``.
+
+    Returns
+    -------
+    str
+        The registered space name (same as ``name``).
+    """
+    if name not in SPACES:
+
+        def transform(X, ctx, pert):
+            return to_dense(X[:, indices(ctx, pert)])
+
+        SPACES.add(name, transform, indices=indices, global_space=global_space, description=description)
+    return name
+
+
+# --- Selection rules: (ctx, pert) -> integer positions into the full gene axis ---
 
 
 def _field(de, name):
     return de.extra[name.split(":", 1)[1]] if name.startswith("extra:") else getattr(de, name)
 
 
-def _index_space(name, indices, *, global_space=False, prepare=None, description=""):
-    """Register a gene-subset space: ``indices(ctx, pert) -> array`` picks the columns to keep.
-
-    Shared by every subset-space factory below. Stores ``indices`` as registry metadata (not
-    just the resulting transform) so :func:`combine_space` can compose spaces by their gene-index
-    sets rather than their already-densified output.
-    """
-
-    def transform(X, ctx, pert):
-        return to_dense(X[:, indices(ctx, pert)])
-
-    SPACES.add(name, transform, indices=indices, global_space=global_space, prepare=prepare, description=description)
-    return name
+def _de_top(ctx, pert, *, field, k):
+    """Top-k genes by absolute value of a ground-truth DE field, per perturbation."""
+    return np.argsort(-np.abs(_field(ctx.de(pert, ctx.cfg.truth), field)))[:k]
 
 
-def register_de_space(name, field, top=None, threshold=None, description=""):
+def _de_threshold(ctx, pert, *, field, threshold):
+    """Genes whose ground-truth DE field passes ``threshold``, per perturbation."""
+    return np.where(threshold(_field(ctx.de(pert, ctx.cfg.truth), field)))[0]
+
+
+def _below(values, *, p):
+    return values < p
+
+
+def _heg(ctx, pert, *, k):
+    """Top-k genes by control-condition mean expression, dataset-wide."""
+    return np.argsort(-ctx.control_mean())[:k]
+
+
+def _hvg(ctx, pert, *, k):
+    """Top-k genes by control-condition normalized dispersion, dataset-wide."""
+    return np.argsort(-ctx.control_hvg_dispersion())[:k]
+
+
+def _perturbed_genes(ctx, pert):
+    """Genes targeted by a retained perturbation, dataset-wide."""
+    return ctx.perturbed_gene_indices()
+
+
+# --- Parameterised families: a factory registers name_<value> on demand ---
+
+
+def register_de_space(name, field, top=None, threshold=None, description="") -> str:
     r"""Register a DE-derived gene subset selected from a field of the GT PerturbationDEResult.
 
     Exactly one of ``top`` (select top-k by \|value\|) or ``threshold`` (a callable
@@ -121,15 +190,12 @@ def register_de_space(name, field, top=None, threshold=None, description=""):
     str
         The registered space name (same as ``name``).
     """
-
-    def indices(ctx, pert):
-        values = _field(ctx.de(pert, ctx.cfg.truth), field)
-        if top is not None:
-            return np.argsort(-np.abs(values))[:top]
+    if top is not None:
+        rule = partial(_de_top, field=field, k=top)
+    else:
         assert threshold is not None  # register_de_space takes exactly one of top/threshold
-        return np.where(threshold(values))[0]
-
-    return _index_space(name, indices, description=description)
+        rule = partial(_de_threshold, field=field, threshold=threshold)
+    return register_subset_space(name, rule, description=description)
 
 
 def top_space(k: int) -> str:
@@ -145,12 +211,9 @@ def top_space(k: int) -> str:
     str
         Space name ``"top_<k>"`` (e.g. ``"top_50"``).
     """
-    name = f"top_{k}"
-    if name not in SPACES:
-        register_de_space(
-            name, field="statistic", top=k, description=f"top {k} genes by ground-truth effect size, per perturbation"
-        )
-    return name
+    return register_de_space(
+        f"top_{k}", field="statistic", top=k, description=f"top {k} genes by ground-truth effect size, per perturbation"
+    )
 
 
 def degs_space(padj: float) -> str:
@@ -166,15 +229,88 @@ def degs_space(padj: float) -> str:
     str
         Space name ``"degs_<padj>"`` (e.g. ``"degs_0.05"``).
     """
-    name = f"degs_{padj:g}"
-    if name not in SPACES:
-        register_de_space(
-            name,
-            field="pvalue_adj",
-            threshold=(lambda v, p=padj: v < p),
-            description=f"ground-truth DEGs at adjusted p < {padj:g}, per perturbation",
-        )
-    return name
+    return register_de_space(
+        f"degs_{padj:g}",
+        field="pvalue_adj",
+        threshold=partial(_below, p=padj),
+        description=f"ground-truth DEGs at adjusted p < {padj:g}, per perturbation",
+    )
+
+
+def heg_space(k: int) -> str:
+    """top-k highly-expressed genes by control-condition mean (registered on demand).
+
+    Ranks genes dataset-wide by their mean expression in control cells — the same panel
+    for every perturbation, unlike :func:`top_space`/:func:`degs_space` which rank per
+    perturbation by ground-truth effect size. This is the gene-selection criterion used by
+    :cite:t:`AhlmannEltze_2025`.
+
+    Parameters
+    ----------
+    k : int
+        Number of genes to keep (highest control-mean expression, dataset-wide).
+
+    Returns
+    -------
+    str
+        Space name ``"heg_<k>"`` (e.g. ``"heg_1000"``).
+    """
+    return register_subset_space(
+        f"heg_{k}",
+        partial(_heg, k=k),
+        global_space=True,
+        description=f"top {k} genes by control-condition expression",
+    )
+
+
+def hvg_space(k: int) -> str:
+    """top-k highly-variable genes by control-condition dispersion (registered on demand).
+
+    Ranks genes dataset-wide by scanpy's ``"seurat"``-flavor normalized dispersion
+    (:meth:`~scperteval.dataset.Dataset.control_hvg_dispersion`) over control cells — the
+    same mean-binned-dispersion statistic ``sc.pp.highly_variable_genes`` uses, computed once
+    over the (log-normalised, per ``docs/user-guide/datasets.md``) control cells and cached
+    per dataset.
+
+    Parameters
+    ----------
+    k : int
+        Number of genes to keep (highest control-cell normalized dispersion, dataset-wide).
+
+    Returns
+    -------
+    str
+        Space name ``"hvg_<k>"`` (e.g. ``"hvg_2000"``).
+    """
+    return register_subset_space(
+        f"hvg_{k}",
+        partial(_hvg, k=k),
+        global_space=True,
+        description=f"top {k} genes by control-condition normalized dispersion",
+    )
+
+
+def perturbed_genes_space() -> str:
+    """Genes targeted by a perturbation in the dataset (registered on demand, no parameters).
+
+    Reads :meth:`~scperteval.context.Context.perturbed_gene_indices` — perturbation labels are
+    gene symbols matching ``var_names`` (``+``-delimited for combinations; see
+    ``docs/user-guide/datasets.md``). For a knockdown screen these are the knocked-down genes,
+    whose own expression is the most direct readout that a perturbation took effect; they are
+    not necessarily highly variable, which is why this is meant to be *unioned* with another
+    subset space via :func:`combine_space` rather than used standalone.
+
+    Returns
+    -------
+    str
+        The registered space name, ``"perturbed_genes"``.
+    """
+    return register_subset_space(
+        "perturbed_genes",
+        _perturbed_genes,
+        global_space=True,
+        description="genes targeted by a perturbation in the dataset",
+    )
 
 
 def _pca_prepare(ctx, names):
@@ -194,6 +330,10 @@ def pca_space(k: int) -> str:
 
     PCA is fit once on (up to 50 000) cells from the full dataset, then applied
     to each cell population. The fitted transform is shared across perturbations.
+
+    Not a gene subset — it transforms genes into components rather than selecting among them —
+    so it is registered directly rather than through :func:`register_subset_space`, and
+    :func:`combine_space` rejects it.
 
     Parameters
     ----------
@@ -221,142 +361,87 @@ def pca_space(k: int) -> str:
     return name
 
 
-def heg_space(k: int) -> str:
-    """top-k highly-expressed genes by control-condition mean (registered on demand).
+# --- Composing gene-subset spaces ---
 
-    Ranks genes dataset-wide by their mean expression in control cells — the same panel
-    for every perturbation, unlike :func:`top_space`/:func:`degs_space` which rank per
-    perturbation by ground-truth effect size. This is the gene-selection criterion used by
-    :cite:t:`AhlmannEltze_2025`.
-
-    Parameters
-    ----------
-    k : int
-        Number of genes to keep (highest control-mean expression, dataset-wide).
-
-    Returns
-    -------
-    str
-        Space name ``"heg_<k>"`` (e.g. ``"heg_1000"``).
-    """
-    name = f"heg_{k}"
-    if name not in SPACES:
-
-        def indices(ctx, pert):
-            return np.argsort(-ctx.control_mean())[:k]
-
-        _index_space(name, indices, global_space=True, description=f"top {k} genes by control-condition expression")
-    return name
-
-
-def hvg_space(k: int) -> str:
-    """top-k highly-variable genes by control-condition dispersion (registered on demand).
-
-    Ranks genes dataset-wide by scanpy's ``"seurat"``-flavor normalized dispersion
-    (:meth:`~scperteval.dataset.Dataset.control_hvg_dispersion`) over control cells — the
-    same mean-binned-dispersion statistic ``sc.pp.highly_variable_genes`` uses, computed once
-    on log-normalised control cells and cached per dataset.
-
-    Parameters
-    ----------
-    k : int
-        Number of genes to keep (highest control-cell normalized dispersion, dataset-wide).
-
-    Returns
-    -------
-    str
-        Space name ``"hvg_<k>"`` (e.g. ``"hvg_2000"``).
-    """
-    name = f"hvg_{k}"
-    if name not in SPACES:
-
-        def indices(ctx, pert):
-            return np.argsort(-ctx.control_hvg_dispersion())[:k]
-
-        _index_space(
-            name,
-            indices,
-            global_space=True,
-            description=f"top {k} genes by control-condition normalized dispersion",
-        )
-    return name
-
-
-def perturbed_space() -> str:
-    """Genes targeted by any perturbation in the dataset (registered on demand, no parameters).
-
-    Reads :meth:`~scperteval.context.Context.perturbed_genes` — perturbation labels are gene
-    symbols matching ``var_names`` (``+``-delimited for combinations; see
-    docs/user-guide/datasets.md). Meant to be composed with another subset space via
-    :func:`combine_space` (e.g. Miller et al. 2025's HVG ∪ perturbed-genes gene panel) rather
-    than used standalone.
-
-    Returns
-    -------
-    str
-        The registered space name, ``"perturbed"``.
-    """
-    name = "perturbed"
-    if name not in SPACES:
-
-        def indices(ctx, pert):
-            return ctx.perturbed_genes()
-
-        _index_space(name, indices, global_space=True, description="genes targeted by any perturbation in the dataset")
-    return name
-
-
-_COMBINE_OPS: dict[str, tuple[str, Callable[[np.ndarray, np.ndarray], np.ndarray]]] = {
-    "union": ("+", np.union1d),
-    "intersect": ("&", np.intersect1d),
-    "diff": ("-", np.setdiff1d),
+_COMBINE_OPS: dict[str, Callable[[np.ndarray, np.ndarray], np.ndarray]] = {
+    "union": np.union1d,
+    "intersect": np.intersect1d,
+    "diff": np.setdiff1d,
 }
 
 
-def combine_space(*names: str, op: str = "union") -> str:
-    """Compose two or more registered gene-subset spaces by a set operation.
+def _combined(ctx, pert, *, rules, reduce_op):
+    """Fold the constituent selection rules left-to-right with a set operation."""
+    result = rules[0](ctx, pert)
+    for rule in rules[1:]:
+        result = reduce_op(result, rule(ctx, pert))
+    return result
 
-    Each ``name`` must already be a registered subset space carrying an ``indices(ctx, pert)``
-    callable in its metadata — i.e. anything registered via :func:`_index_space`
-    (:func:`top_space`, :func:`degs_space`, :func:`heg_space`, :func:`hvg_space`,
-    :func:`perturbed_space`, or a custom space registered the same way). :func:`space_full`
-    and :func:`pca_space` aren't gene subsets and can't be composed this way.
+
+def combine_space(name: str, *spaces: str, op: str = "union") -> str:
+    """Register a new gene-subset space built from two or more existing ones by a set operation.
+
+    Each of ``spaces`` must already be a registered *subset* space — i.e. one registered via
+    :func:`register_subset_space`, which is every built-in space except ``full`` and ``pca_<k>``.
+    Their selection rules are applied to the same ``(ctx, pert)`` and folded together, so the
+    genes are combined as index sets and the cells are densified only once, at the end.
 
     Parameters
     ----------
-    *names : str
+    name : str
+        Registry key for the new space. Chosen by the caller (as with
+        :func:`register_de_space`) so composed panels get a meaningful name — e.g.
+        ``"miller_panel"`` rather than a derived one.
+    *spaces : str
         Two or more already-registered gene-subset space names.
     op : str
-        ``"union"`` (default, symbol ``"+"``), ``"intersect"`` (``"&"``), or ``"diff"``
-        (``"-"``, left-to-right: ``names[0]`` minus the rest).
+        ``"union"`` (default), ``"intersect"``, or ``"diff"`` — the latter left-to-right, i.e.
+        ``spaces[0]`` minus all the rest.
 
     Returns
     -------
     str
-        The composed space's name — ``op``'s symbol joining ``names`` in order
-        (e.g. ``"hvg_2000+perturbed"``).
+        The registered space name (same as ``name``).
+
+    Notes
+    -----
+    The numpy set operations return sorted output, so a composite's columns are in gene order
+    even when its constituents' are in rank order (``heg_5`` yields the five highest-expressed
+    genes ranked; a composite including it yields them sorted). Every metric here is
+    column-order invariant, so this only matters to an order-sensitive consumer.
+
+    The constituent rules are looked up once, at registration; re-registering one of ``spaces``
+    afterwards does not change an already-composed space.
+
+    Examples
+    --------
+    The HVG ∪ perturbed-genes gene panel of :cite:t:`Miller_2025`::
+
+        combine_space("miller_panel", hvg_space(8192), perturbed_genes_space())
+
+    (``8192`` here is a number of genes; it is unrelated to the identically-valued default
+    ``subsample``, which counts reference *cells*.)
     """
-    if len(names) < 2:
+    if len(spaces) < 2:
         raise ValueError("combine_space needs at least two space names")
     if op not in _COMBINE_OPS:
         raise ValueError(f"unknown op {op!r}; expected one of {sorted(_COMBINE_OPS)}")
-    symbol, reduce_op = _COMBINE_OPS[op]
-    name = symbol.join(names)
-    if name not in SPACES:
-        missing = [n for n in names if "indices" not in SPACES.meta(n)]
-        if missing:
-            raise ValueError(f"not gene-subset spaces (no indices metadata): {missing}")
-        index_fns = [SPACES.meta(n)["indices"] for n in names]
-        global_space = all(SPACES.meta(n).get("global_space", False) for n in names)
-
-        def indices(ctx, pert):
-            result = index_fns[0](ctx, pert)
-            for fn in index_fns[1:]:
-                result = reduce_op(result, fn(ctx, pert))
-            return result
-
-        _index_space(name, indices, global_space=global_space, description=f"{op} of {', '.join(names)}")
-    return name
+    unknown = [s for s in spaces if s not in SPACES]
+    if unknown:
+        raise KeyError(f"unknown {SPACES.kind}(s) {unknown}; available: {SPACES.names()}")
+    not_subsets = [s for s in spaces if "indices" not in SPACES.meta(s)]
+    if not_subsets:
+        raise ValueError(
+            f"not gene-subset spaces (no indices metadata): {not_subsets}; "
+            f"only spaces registered via register_subset_space can be composed"
+        )
+    rules = [SPACES.meta(s)["indices"] for s in spaces]
+    return register_subset_space(
+        name,
+        partial(_combined, rules=rules, reduce_op=_COMBINE_OPS[op]),
+        global_space=all(SPACES.meta(s).get("global_space", False) for s in spaces),
+        description=f"{op} of {', '.join(spaces)}",
+    )
 
 
 # Default instances — also what `scperteval list spaces` shows.
@@ -365,4 +450,4 @@ pca_space(50)
 degs_space(0.05)
 heg_space(1000)
 hvg_space(2000)
-perturbed_space()
+perturbed_genes_space()

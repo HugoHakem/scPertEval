@@ -42,8 +42,8 @@ class CacheStore:
         self.moments: dict = {}
         self.pca_fits: dict = {}  # fit-size -> fitted PCA; each size fit once and never replaced
         self.control_mean: np.ndarray | None = None
-        self.control_hvg: np.ndarray | None = None
-        self.perturbed_genes: np.ndarray | None = None
+        self.control_hvg_dispersion: np.ndarray | None = None
+        self.perturbed_gene_indices: np.ndarray | None = None
         self.reference: Reference | None = None
         self.reference_projections: dict = {}
         self.reference_sums: tuple | None = None
@@ -317,19 +317,19 @@ class Context:
 
     def control_hvg_dispersion(self):
         """Per-gene normalized dispersion of the control cells (cached)."""
-        if self._store.control_hvg is None:
+        if self._store.control_hvg_dispersion is None:
             with self._init_lock:
-                if self._store.control_hvg is None:
-                    self._store.control_hvg = self.ds.control_hvg_dispersion()
-        return self._store.control_hvg
+                if self._store.control_hvg_dispersion is None:
+                    self._store.control_hvg_dispersion = self.ds.control_hvg_dispersion()
+        return self._store.control_hvg_dispersion
 
-    def perturbed_genes(self):
-        """Indices of genes targeted by some perturbation in the dataset (cached)."""
-        if self._store.perturbed_genes is None:
+    def perturbed_gene_indices(self):
+        """``var_names`` indices of the genes targeted by a retained perturbation (cached)."""
+        if self._store.perturbed_gene_indices is None:
             with self._init_lock:
-                if self._store.perturbed_genes is None:
-                    self._store.perturbed_genes = self.ds.perturbed_gene_indices()
-        return self._store.perturbed_genes
+                if self._store.perturbed_gene_indices is None:
+                    self._store.perturbed_gene_indices = self.ds.perturbed_gene_indices()
+        return self._store.perturbed_gene_indices
 
     def pca(self, k=50):
         """A fitted PCA whose top ``k`` components a ``pca_<k>`` space slices.

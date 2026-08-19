@@ -94,24 +94,45 @@ class Dataset:
         return np.asarray(self.adata.X[self.control_idx].mean(0)).ravel()
 
     def control_hvg_dispersion(self) -> np.ndarray:
-        """Per-gene normalized dispersion of the control cells (scanpy's ``"seurat"`` HVG statistic)."""
+        """Per-gene normalized dispersion of the control cells (scanpy's ``"seurat"`` HVG statistic).
+
+        ``X`` is passed through as-is: scanpy accepts sparse input and returns the identical
+        statistic, so the control block is never densified (it can be the largest single
+        population in the dataset).
+        """
         import scanpy as sc
 
-        view = ad.AnnData(X=to_dense(self.adata.X[self.control_idx]))
+        view = ad.AnnData(X=self.adata.X[self.control_idx])
         df = sc.pp.highly_variable_genes(view, flavor="seurat", inplace=False)
         assert df is not None  # inplace=False always returns a DataFrame
         return df["dispersions_norm"].to_numpy()
 
     def perturbed_gene_indices(self) -> np.ndarray:
-        """``var_names`` indices of every gene targeted by some perturbation in the dataset.
+        """``var_names`` indices of every gene targeted by a retained perturbation.
 
-        Perturbation labels are gene symbols matching ``var_names``; combinations are
-        ``+``-delimited (e.g. ``"GENE1+GENE2"``, see docs/user-guide/datasets.md). A token that
-        doesn't match any ``var_names`` entry (e.g. a non-gene treatment label) is skipped.
+        Retained means it passed the ``min_cells`` filter, so this is the set of genes targeted
+        by the perturbations actually being evaluated. Labels are gene symbols matching
+        ``var_names``; combinations are ``+``-delimited (e.g. ``"GENE1+GENE2"``, see
+        docs/user-guide/datasets.md). A token that doesn't match any ``var_names`` entry (e.g. a
+        non-gene treatment label) is skipped.
+
+        Raises
+        ------
+        ValueError
+            If no label matches a gene, which would leave an empty panel — the metrics would
+            silently return ``nan`` rather than fail.
         """
         pos = {g: i for i, g in enumerate(self.var_names)}
         idx = {pos[gene] for pert in self.perturbations for gene in pert.split("+") if gene in pos}
-        return np.array(sorted(idx))
+        if not idx:
+            raise ValueError(
+                "no perturbation label matches a gene in var_names, so the perturbed-gene panel "
+                "would be empty. Labels are split on '+' and matched exactly against var_names "
+                f"(labels e.g. {[str(x) for x in self.perturbations[:3]]}, "
+                f"genes e.g. {[str(g) for g in self.var_names[:3]]}). "
+                "This space needs genetic perturbations labelled with gene symbols."
+            )
+        return np.array(sorted(idx), dtype=int)
 
     def _cap(self, idx: np.ndarray, cap: int, *tags) -> np.ndarray:
         if len(idx) <= cap:

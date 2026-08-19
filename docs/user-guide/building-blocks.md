@@ -13,11 +13,31 @@ gene axis. Register it with `@SPACES.register` in
 depend on the perturbation (so it can be computed once and shared):
 
 ```python
-@SPACES.register("hvg_100", global_space=True, description="100 highest-variance genes")
-def space_hvg(X, ctx, pert):
+@SPACES.register("my_panel", global_space=True, description="a hand-picked gene panel")
+def space_my_panel(X, ctx, pert):
     keep = ...                       # indices of the genes to keep
     return to_dense(X[:, keep])
 ```
+
+**If your space selects a subset of genes**, register it with `register_subset_space` rather
+than by hand. You supply only the selection rule — `indices(ctx, pert)`, returning integer
+positions into the full gene axis — and the slice-and-densify transform comes for free:
+
+```python
+register_subset_space("my_panel", my_rule, global_space=True, description="…")
+```
+
+That also records the rule under the `indices` metadata key, which is what makes a space
+*composable*: `combine_space(name, *spaces, op=...)` builds a new space by unioning,
+intersecting, or subtracting the gene sets of existing ones. It's how the HVG ∪ perturbed-genes
+panel is expressed:
+
+```python
+combine_space("miller_panel", hvg_space(8192), perturbed_genes_space())
+```
+
+A space registered without `indices` still works everywhere else — it just can't be composed,
+which is why `full` and `pca_<k>` (not gene subsets) are rejected by `combine_space`.
 
 For a per-perturbation subset derived from the ground-truth DE (like `top_k` / `degs`), use
 the `register_de_space(name, field=..., top=...)` helper in the same file instead.
