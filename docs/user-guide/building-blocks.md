@@ -7,68 +7,90 @@ a one-line registration. To author the protocol or metric that draws on these bl
 
 ## Add a feature space
 
-A space picks the features a protocol scores on. Almost every space is a **gene subset** — it
-keeps some gene columns and drops the rest, differing only in *which* genes it picks. Everything
-goes in
-[`src/scperteval/blocks/spaces.py`](https://github.com/Virtual-Cell-Research-Community/scPertEval/blob/main/src/scperteval/blocks/spaces.py),
-in three steps. Copy the nearest existing family — `heg_<k>` is the simplest complete example —
-and change the name, the rule, and the description:
+A space decides which features a protocol scores on. Every space is **one line** near the bottom
+of
+[`src/scperteval/blocks/spaces.py`](https://github.com/Virtual-Cell-Research-Community/scPertEval/blob/main/src/scperteval/blocks/spaces.py):
 
 ```python
-# --- mito_<k> — the k mitochondrial genes with the highest control expression ---
+FULL = Subset("full", _all_genes,        None, "all genes, no transform")
+TOP  = Subset("top",  _strongest_de,       50, "top {v} genes by ground-truth effect size", per_pert=True)
+HEG  = Subset("heg",  _highest_expressed, 1000, "top {v} genes by control-condition expression")
+...
 
-def _mito(ctx, pert, *, k):                          # 1. the selection rule
+SUBSETS = [FULL, TOP, DEGS, HEG, HVG, PERTURBED_GENES]
+DEFAULTS = [row.register() for row in SUBSETS] + [row.register() for row in TRANSFORMS]
+```
+
+Adding one is two edits, both in that file. Write the selection rule, then add the space and put
+it in the list:
+
+```python
+def _mitochondrial(ctx, pert, k):                    # 1. the rule
     mito = np.flatnonzero(np.char.startswith(ctx.ds.var_names, "MT-"))
     return mito[np.argsort(-ctx.control_mean()[mito])][:k]
 
-def mito_space(k: int) -> str:                       # 2. the factory
-    return register_subset_space(
-        f"mito_{k}", partial(_mito, k=k), global_space=True,
-        description=f"top {k} mitochondrial genes by control-condition expression",
-    )
+MITO = Subset("mito", _mitochondrial, 20,            # 2. the space
+              "top {v} mitochondrial genes by control-condition expression")
 
-mito_space(20)                                       # 3. a default instance, at the bottom
+SUBSETS = [FULL, TOP, DEGS, HEG, HVG, PERTURBED_GENES, MITO]
 ```
 
-1. **The selection rule** returns integer positions into the *full* gene axis — never into some
-   earlier subset — so rules from different spaces stay comparable. Ignore `pert` if the choice
-   is dataset-wide. The rule runs once per perturbation per protocol, so anything expensive and
-   shared belongs behind a `Context` cache (as `ctx.control_mean()` is), not recomputed here.
-2. **The factory** binds the parameters with `partial` and calls `register_subset_space`, which
-   supplies the slice-and-densify transform and returns the space name. Pass
-   `global_space=True` when the rule ignores `pert`, so the result can be computed once and
-   shared across perturbations.
-3. **The default instance** is one call at the bottom of the file, which is what makes the space
-   show up in `scperteval list spaces`.
+That is the whole thing. `mito_20` is registered at import and appears in `scperteval list
+spaces`; `MITO.register(50)` registers `mito_50` on demand; and it composes with any other subset
+via `combine_space`.
 
-That is also all it takes to make the space **composable**. `register_subset_space` records the
-rule under the `indices` metadata key, and `combine_space` builds new spaces by unioning,
-intersecting, or subtracting the gene sets of existing ones — how the HVG ∪ perturbed-genes
-panel is expressed:
+**The rule** returns a column selection into the *full* gene axis — an integer array, or a
+slice — never positions into some earlier subset, so selections from different spaces can be
+combined. It receives `(ctx, pert, value)`, where `value` is the space's parameter. Ignore `pert`
+unless the choice actually varies per perturbation, and set `per_pert=True` when it does, so
+scPertEval knows it can't compute the selection once and share it.
+
+**The arguments** are `Subset(name, rule, default, description)`. `default` is the parameter
+value of the instance registered at import, and instances are named `<name>_<value>` — so
+`default=20` gives you `mito_20`. Use `None` when the space takes no parameter at all (as `full`
+and `perturbed_genes` do); the instance is then just `<name>`. `{v}` in the description is
+filled in with the parameter.
+
+**Registration** is what makes a name usable: a protocol names its space as a string, so
+`SPACES["mito_20"]` has to resolve. `DEFAULTS`, directly under the list, calls `register()` on
+every space when the module is imported. Any other value registers the first time
+`MITO.register(50)` is called, which is what a protocol template does when you pass
+`-p <protocol>=<value>` — `table.py` wires that up as `Param("k", int, 20, space=MITO.register)`.
+
+**Expensive statistics belong on the `Context`.** The rule runs once per perturbation per
+protocol, so anything computed over the whole dataset should be cached rather than recomputed.
+`_highest_expressed` calls `ctx.control_mean()` for this reason. Adding a new cached statistic
+means three small edits following `control_hvg_dispersion` as the template: a method on
+`Dataset`, a slot on `CacheStore`, and a double-checked-lock accessor on `Context`.
+
+### Spaces that aren't gene subsets
+
+`pca_<k>` replaces the gene axis with components instead of narrowing it, so it has no gene
+selection and nothing to compose. Those are `Transform`s and supply the finished array:
 
 ```python
-combine_space("miller_panel", hvg_space(8192), perturbed_genes_space())
+PCA = Transform("pca", _principal_components, 50, "top {v} principal components", _fit_pca)
 ```
 
-**Shortcut for DE-derived subsets.** If the genes are chosen from the ground-truth differential
-expression (as `top_k` and `degs` are), `register_de_space` writes the rule for you — you supply
-only which field to read and how to cut it:
+The optional last argument is a `prepare(ctx, names)` hook, run once before a run with every
+requested variant name, for building shared structure up front (PCA fits each requested size
+there). It is purely an optimisation: `apply` must stay correct if it never runs.
+
+### Combining subsets
+
+`combine_space` builds a new space from existing subsets by a set operation. The built-in
+`miller_panel` is defined this way, at the bottom of `spaces.py`:
 
 ```python
-register_de_space("my_degs", field="pvalue_adj", threshold=lambda v: v < 0.01, description="…")
+combine_space("miller_panel", HVG.register(8192), PERTURBED_GENES.register())
+combine_space("not_hvg", FULL.register(), HVG.register(2000), op="diff")
 ```
 
-**Spaces that aren't gene subsets.** A space that *transforms* genes into something else rather
-than selecting among them — `pca_<k>` is the only built-in — registers its transform directly:
+### Defining a space outside the repo
 
-```python
-@SPACES.register("my_embedding", global_space=True, description="…")
-def space_my_embedding(X, ctx, pert):
-    return ...                       # a dense cells × features array
-```
-
-Such a space works everywhere else but can't be composed, which is why `combine_space` rejects
-`full` and `pca_<k>`.
+`register_subset_space(name, select, ...)` registers one directly, for a space that shouldn't
+live in this file. `select` takes `(ctx, pert)` — already bound to its parameter — and the
+result composes like any other subset.
 
 ## Add a DE method
 

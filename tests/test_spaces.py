@@ -13,14 +13,7 @@ import numpy as np
 import pytest
 from conftest import make_cfg
 
-from scperteval.blocks.spaces import (
-    SPACES,
-    combine_space,
-    heg_space,
-    hvg_space,
-    perturbed_genes_space,
-    top_space,
-)
+from scperteval.blocks.spaces import DEGS, FULL, HEG, HVG, MILLER_PANEL, PERTURBED_GENES, SPACES, TOP
 from scperteval.calibrators import CALIBRATORS
 from scperteval.context import Context
 from scperteval.dataset import Dataset
@@ -31,7 +24,7 @@ from scperteval.runner import run_protocol
 
 def _rule(name, ctx, pert):
     """The gene indices ``name`` selects — its registered ``indices`` rule."""
-    return SPACES.meta(name)["indices"](ctx, pert)
+    return SPACES.meta(name)["select"](ctx, pert)
 
 
 def test_heg_space_picks_highest_control_expression_genes():
@@ -46,7 +39,7 @@ def test_heg_space_picks_highest_control_expression_genes():
 
     cfg = make_cfg(min_cells=10)
     ctx = Context(Dataset(adata, cfg), cfg)
-    name = heg_space(3)
+    name = SPACES.instance(HEG, 3)
     out = SPACES[name](ctx.ds.cells("pertA"), ctx, "pertA")
 
     assert out.shape[1] == 3
@@ -84,7 +77,7 @@ def test_hvg_space_picks_highest_dispersion_genes():
 
     cfg = make_cfg(min_cells=10)
     ctx = Context(Dataset(adata, cfg), cfg)
-    name = hvg_space(n_top)
+    name = SPACES.instance(HVG, n_top)
     out = SPACES[name](ctx.ds.cells("pertA"), ctx, "pertA")
 
     dispersion = ctx.control_hvg_dispersion()
@@ -128,7 +121,7 @@ def test_perturbed_gene_indices_raises_when_no_label_is_a_gene():
 
 
 def _heg_and_perturbed_dataset():
-    """10 genes; heg_space(3) picks {3, 6, 8}; perturbations target {0, 3, 5} (g3 overlaps)."""
+    """10 genes; SPACES.instance(HEG, 3) picks {3, 6, 8}; perturbations target {0, 3, 5} (g3 overlaps)."""
     rng = np.random.default_rng(0)
     ng = 10
     ctrl_means = np.array([1.0, 5.0, 2.0, 9.0, 0.5, 3.0, 8.0, 4.0, 7.0, 6.0])
@@ -153,7 +146,7 @@ def _heg_and_perturbed_dataset():
 )
 def test_combine_space_applies_the_set_operation(op, expected):
     ctx = _heg_and_perturbed_dataset()
-    name = combine_space(f"heg3_{op}_pert", heg_space(3), perturbed_genes_space(), op=op)
+    name = SPACES.combine(f"heg3_{op}_pert", SPACES.instance(HEG, 3), SPACES.instance(PERTURBED_GENES), op=op)
     assert sorted(_rule(name, ctx, "g5").tolist()) == expected
     assert SPACES[name](ctx.ds.cells("g5"), ctx, "g5").shape[1] == len(expected)
 
@@ -161,15 +154,15 @@ def test_combine_space_applies_the_set_operation(op, expected):
 def test_combine_space_composes_composites():
     """A composite carries ``indices`` too, so it can be composed again -- and nesting is explicit."""
     ctx = _heg_and_perturbed_dataset()
-    heg, pert, hvg = heg_space(3), perturbed_genes_space(), hvg_space(4)
-    inner = combine_space("heg3_minus_pert", heg, pert, op="diff")
+    heg, pert, hvg = SPACES.instance(HEG, 3), SPACES.instance(PERTURBED_GENES), SPACES.instance(HVG, 4)
+    inner = SPACES.combine("heg3_minus_pert", heg, pert, op="diff")
     assert sorted(_rule(inner, ctx, "g5").tolist()) == [6, 8]
 
     # (heg_3 \ perturbed_genes) U hvg_4 and heg_3 \ (perturbed_genes U hvg_4) are different sets,
     # and each caller names its own panel, so neither can silently shadow the other.
-    left = combine_space("left_grouping", inner, hvg, op="union")
-    outer = combine_space("pert_or_hvg", pert, hvg, op="union")
-    right = combine_space("right_grouping", heg, outer, op="diff")
+    left = SPACES.combine("left_grouping", inner, hvg, op="union")
+    outer = SPACES.combine("pert_or_hvg", pert, hvg, op="union")
+    right = SPACES.combine("right_grouping", heg, outer, op="diff")
 
     hvg_idx = set(_rule(hvg, ctx, "g5").tolist())
     assert set(_rule(left, ctx, "g5").tolist()) == {6, 8} | hvg_idx
@@ -179,8 +172,8 @@ def test_combine_space_composes_composites():
 
 def test_combine_space_folds_three_spaces_left_to_right():
     ctx = _heg_and_perturbed_dataset()
-    heg, pert, hvg = heg_space(3), perturbed_genes_space(), hvg_space(4)
-    name = combine_space("three_way_diff", heg, pert, hvg, op="diff")
+    heg, pert, hvg = SPACES.instance(HEG, 3), SPACES.instance(PERTURBED_GENES), SPACES.instance(HVG, 4)
+    name = SPACES.combine("three_way_diff", heg, pert, hvg, op="diff")
     expected = set(_rule(heg, ctx, "g5").tolist()) - set(_rule(pert, ctx, "g5").tolist())
     expected -= set(_rule(hvg, ctx, "g5").tolist())
     assert set(_rule(name, ctx, "g5").tolist()) == expected
@@ -188,20 +181,50 @@ def test_combine_space_folds_three_spaces_left_to_right():
 
 def test_combine_space_is_global_only_when_every_part_is():
     """global_space gates the shared reference projection, so one per-perturbation part poisons it."""
-    assert SPACES.meta(combine_space("both_global", heg_space(3), perturbed_genes_space()))["global_space"]
-    mixed = combine_space("one_per_pert", top_space(50), heg_space(3))
+    assert SPACES.meta(SPACES.combine("both_global", SPACES.instance(HEG, 3), SPACES.instance(PERTURBED_GENES)))[
+        "global_space"
+    ]
+    mixed = SPACES.combine("one_per_pert", SPACES.instance(TOP, 50), SPACES.instance(HEG, 3))
     assert not SPACES.meta(mixed)["global_space"]
 
 
 def test_combine_space_rejects_bad_input():
     with pytest.raises(ValueError, match="at least two"):
-        combine_space("too_few", heg_space(3))
+        SPACES.combine("too_few", SPACES.instance(HEG, 3))
     with pytest.raises(ValueError, match="unknown op"):
-        combine_space("bad_op", heg_space(3), perturbed_genes_space(), op="xor")
-    with pytest.raises(ValueError, match="indices metadata"):
-        combine_space("with_full", "full", perturbed_genes_space())  # "full" isn't a gene subset
+        SPACES.combine("bad_op", SPACES.instance(HEG, 3), SPACES.instance(PERTURBED_GENES), op="xor")
+    with pytest.raises(ValueError, match="no genes to combine"):
+        SPACES.combine("with_pca", "pca_50", SPACES.instance(PERTURBED_GENES))  # pca isn't a gene subset
     with pytest.raises(KeyError, match="unknown space"):
-        combine_space("with_typo", "heg_99999", perturbed_genes_space())
+        SPACES.combine("with_typo", "heg_99999", SPACES.instance(PERTURBED_GENES))
+
+
+def test_register_defaults_the_value_and_guards_it():
+    assert SPACES.instance(HEG) == "heg_1000"  # the row's default value
+    assert SPACES.instance(HEG, 250) == "heg_250"
+    assert SPACES.instance(PERTURBED_GENES) == "perturbed_genes"
+    with pytest.raises(TypeError, match="takes no parameter"):
+        SPACES.instance(FULL, 5)
+    # Distinct values that format to the same name must not silently share one registration.
+    SPACES.instance(DEGS, 0.05)
+    with pytest.raises(ValueError, match="already registered with value"):
+        SPACES.instance(DEGS, 0.05000000001)
+
+
+def test_full_selects_every_gene_without_copying():
+    """The identity space returns a slice, so applying it is a view rather than a gather."""
+    ctx = _heg_and_perturbed_dataset()
+    assert _rule("full", ctx, "g5") == slice(None)
+    cells = ctx.ds.cells("g5")
+    out = SPACES["full"](cells, ctx, "g5")
+    assert out.shape == cells.shape
+
+
+def test_full_composes_as_a_complement():
+    """full - heg_3 is the complement of heg_3, which is why full is a subset and not a transform."""
+    ctx = _heg_and_perturbed_dataset()
+    name = SPACES.combine("not_heg3", SPACES.instance(FULL), SPACES.instance(HEG, 3), op="diff")
+    assert sorted(_rule(name, ctx, "g5").tolist()) == [0, 1, 2, 4, 5, 7, 9]  # 10 genes minus {3, 6, 8}
 
 
 def test_composed_space_runs_end_to_end_through_the_runner(cfg_factory):
@@ -220,8 +243,8 @@ def test_composed_space_runs_end_to_end_through_the_runner(cfg_factory):
     adata.var_names = genes
     adata.obs["perturbation"] = labels
 
-    space = combine_space("panel", hvg_space(10), perturbed_genes_space())
-    proto = replace(PROTOCOLS["energy_distance_top_k"], name="ed_panel", space=space, param=None)
+    panel = SPACES.combine("panel", SPACES.instance(HVG, 10), SPACES.instance(PERTURBED_GENES))
+    proto = replace(PROTOCOLS["energy_distance_top_k"], name="ed_panel", space=panel, param=None)
 
     cfg = cfg_factory(truth="gt_all_cells", calibrator="score")
     ds = Dataset(adata, cfg)
@@ -232,7 +255,19 @@ def test_composed_space_runs_end_to_end_through_the_runner(cfg_factory):
     ctx.predictions = PredictionSet(pred, ds, cfg)
 
     ctx.warm([proto])
-    assert space in ctx._store.reference_projections  # global composite: projected once, shared
+    assert panel in ctx._store.reference_projections  # global composite: projected once, shared
     agg, rows, _ = run_protocol(proto, ctx, CALIBRATORS["score"])
     assert len(rows) == 3
     assert np.isfinite(agg["mean"])
+
+
+def test_miller_panel_is_registered_as_the_hvg_union_perturbed_genes_panel():
+    """The panel the composition machinery exists for is built at import, not left to the user."""
+    assert MILLER_PANEL in SPACES
+    assert SPACES.meta(MILLER_PANEL)["description"] == "union of hvg_8192, perturbed_genes"
+
+    ctx = _heg_and_perturbed_dataset()  # 10 genes, so hvg_8192 degrades to all of them
+    panel = set(_rule(MILLER_PANEL, ctx, "g5").tolist())
+    assert panel == set(_rule(SPACES.instance(HVG, 8192), ctx, "g5").tolist()) | set(
+        _rule(SPACES.instance(PERTURBED_GENES), ctx, "g5").tolist()
+    )

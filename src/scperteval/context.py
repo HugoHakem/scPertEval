@@ -134,8 +134,8 @@ class Context:
         if any(p.representation == "de" for p in protocols):
             self._ensure_reference_sums()
             self._moments("control", None)
-        # A space family may register a `prepare` hook (see the SPACES docstring): run each
-        # distinct hook once with the full set of its requested variant names, so the family can
+        # A space row may register a `prepare` hook (see the Transform docstring): run each
+        # distinct hook once with the full set of its requested variant names, so the space can
         # do its one-time shared precompute before the per-perturbation loop. Runs before the
         # projection loop below so global spaces are ready when it reads them.
         hooks: dict[Callable, set[str]] = {}
