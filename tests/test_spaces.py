@@ -6,6 +6,8 @@ turning a catalog entry into a registered instance.
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from dataclasses import replace
 
 import anndata as ad
@@ -230,3 +232,21 @@ def test_space_runs_end_to_end_through_the_runner(cfg_factory):
     agg, rows, _ = run_protocol(proto, ctx, CALIBRATORS["score"])
     assert len(rows) == 3
     assert np.isfinite(agg["mean"])
+
+
+def test_importing_the_package_defines_the_catalog():
+    """The catalog only exists because importing the package imports the rules that declare it.
+
+    Checked in a fresh interpreter: this module imports ``catalog`` directly, which would define
+    the spaces for the whole pytest session and hide a missing import in ``__init__``.
+    """
+    probe = (
+        "from scperteval.blocks.spaces import SPACES;"
+        "names = [s.name for s in SPACES.catalog()];"
+        "assert 'heg' in names, names;"
+        "assert SPACES['full'] is not None;"
+        "print(len(names))"
+    )
+    out = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True)
+    assert out.returncode == 0, out.stderr
+    assert int(out.stdout.strip()) >= 8
