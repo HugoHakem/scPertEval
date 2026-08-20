@@ -42,12 +42,8 @@ DE backends, feature spaces, control sources, and calibrators.
 
     SPACES
     SpaceRegistry
-    Subset
-    Transform
-    SUBSETS
-    TRANSFORMS
-    DEFAULTS
-    MILLER_PANEL
+    Space
+    combine_subsets
 ```
 
 ## DE backends

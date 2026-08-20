@@ -76,7 +76,7 @@ class Param:
     cast: Callable
     #: Default value used when no value is given on the CLI.
     default: float
-    #: Maps the value to a feature-space name (e.g. ``partial(SPACES.instance, TOP)``); ``None`` passes the value directly to the metric.
+    #: Maps the value to a feature-space name (e.g. ``partial(SPACES.instance, "top")``); ``None`` passes the value directly to the metric.
     space: Callable | None = None
 
 

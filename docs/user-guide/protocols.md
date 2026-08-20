@@ -120,16 +120,22 @@ in each, with descriptions:
 
 ```bash
 $ scperteval list spaces
-degs_0.05       — ground-truth DEGs at adjusted p < 0.05, per perturbation
-full            — all genes, no transform
-heg_1000        — top 1000 genes by control-condition expression
-hvg_2000        — top 2000 genes by control-condition normalized dispersion
-hvg_8192        — top 8192 genes by control-condition normalized dispersion
-miller_panel    — union of hvg_8192, perturbed_genes
-pca_50          — top 50 principal components (fit on the dataset)
-perturbed_genes — genes targeted by a perturbation in the dataset
-top_50          — top 50 genes by ground-truth effect size, per perturbation
+degs_<padj>       — ground-truth DEGs at adjusted p < padj (default 0.05)
+full              — all genes, no transform
+heg_<k>           — top k genes by control-condition expression (default 1000)
+hvg_<k>           — top k genes by control-condition normalized dispersion (default 2000)
+miller_panel      — HVG union perturbed genes — the panel of Miller et al. 2025
+pca_<k>           — top k principal components (fit on the dataset) (default 50)
+perturbed_genes   — genes targeted by a perturbation in the dataset
+top_<k>           — top k genes by ground-truth effect size (default 50)
 ```
+
+This is the *catalog* — `heg_<k>` says more than whichever `k` happens to be registered.
+A protocol template supplies the value, and the concrete space (`heg_1000`) is registered at
+that moment. `heg` follows {cite}`AhlmannEltze_2025`; `miller_panel` is the HVG ∪
+perturbed-genes panel of {cite}`Miller_2025`, written as an ordinary rule that folds two
+others. If the space you need isn't here, see
+[Add a feature space](building-blocks.md#add-a-feature-space).
 
 Each is one row of a table in `spaces.py`: `SUBSETS` for the gene subsets and
 `TRANSFORMS` for `pca_<k>`, which replaces the gene axis rather than narrowing it. The

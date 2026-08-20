@@ -11,14 +11,14 @@ from __future__ import annotations
 from functools import partial
 from typing import Any
 
-from ..blocks.spaces import DEGS, PCA, SPACES, TOP
+from ..blocks.spaces import SPACES
 from ..types import Param, Protocol
 from . import metrics as M
 
 # --- parameter families: a CLI value selects a feature space (or feeds the metric) ---
-top_k = Param("k", int, 50, space=partial(SPACES.instance, TOP))  # top-k DEGs by effect size
-pca_k = Param("k", int, 50, space=partial(SPACES.instance, PCA))  # k principal components
-degs_padj = Param("padj", float, 0.05, space=partial(SPACES.instance, DEGS))  # DEGs at adjusted p < padj
+top_k = Param("k", int, 50, space=partial(SPACES.instance, "top"))  # top-k DEGs by effect size
+pca_k = Param("k", int, 50, space=partial(SPACES.instance, "pca"))  # k principal components
+degs_padj = Param("padj", float, 0.05, space=partial(SPACES.instance, "degs"))  # DEGs at adjusted p < padj
 overlap_k = Param("k", int, 50)  # passed straight to de_overlap's k
 
 
