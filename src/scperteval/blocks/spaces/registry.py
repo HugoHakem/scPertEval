@@ -2,9 +2,9 @@
 
 Two levels, deliberately distinct:
 
-- A **definition** is one entry in the catalog — a rule plus how to present it. There are a
-  handful, declared by decorating a rule in ``catalog.py``.
-  ``scperteval list spaces`` shows these.
+- A **definition** is one entry in the catalog — a rule, plus what it takes and how to
+  describe it. Each is declared by decorating a rule in ``catalog.py``, and
+  ``scperteval list spaces`` lists them.
 - An **instance** is a definition at one parameter value, registered under a concrete name
   (``"heg_1000"``). A protocol names its space as a string, so an instance must exist before a
   run can resolve it. :meth:`SpaceRegistry.instance` creates them, and nothing is instantiated
@@ -48,10 +48,10 @@ OPS = SetOps()
 def combine_subsets(ctx, op: Callable, *selections):
     """Fold gene selections together with a set operation from ``OPS``.
 
-    A composed space is an ordinary subset rule that calls the rules it composes, so composition
-    needs no machinery and nests to any depth. Selections may be slices; each is canonicalised to
-    integer positions first, since the set operations need real indices and every rule indexes the
-    same full gene axis.
+    A composed space is an ordinary subset rule that calls the rules it composes and folds their
+    selections here, so it nests to any depth — a fold can take the result of another fold.
+    Selections may be slices; each is canonicalised to integer positions first, since the set
+    operations need real indices, and every rule indexes the same full gene axis so they line up.
 
     Parameters
     ----------
@@ -130,9 +130,10 @@ class Space:
 class SpaceRegistry(Registry):
     """A :class:`~scperteval.registry.Registry` that also holds the catalog spaces are built from.
 
-    Add a space by decorating its rule with :meth:`SpaceRegistry.subset` or :meth:`SpaceRegistry.transform`, exactly as
-    ``DE_METHODS`` and ``SOURCES`` are extended. :meth:`SpaceRegistry.instance` then builds a named instance on
-    demand; the inherited ``__getitem__`` / ``meta`` / ``names`` see instances only.
+    Add a space by decorating its rule with :meth:`SpaceRegistry.subset` or
+    :meth:`SpaceRegistry.transform`, the same way ``DE_METHODS`` and ``SOURCES`` are extended.
+    :meth:`SpaceRegistry.instance` then builds a named instance from a definition on demand. The
+    inherited ``__getitem__`` / ``meta`` / ``names`` see instances only, never definitions.
     """
 
     def __init__(self, kind: str):

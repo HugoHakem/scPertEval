@@ -15,7 +15,7 @@ it, the same way DE methods and control sources are registered. Everything lives
 @SPACES.subset("mito", default=20, description="top {v} mitochondrial genes by control expression")
 def mito(ctx, pert, k):
     """The k highest-expressed mitochondrial genes."""
-    mt = np.flatnonzero(np.char.startswith(ctx.ds.var_names, "MT-"))
+    mt = np.flatnonzero([g.startswith("MT-") for g in ctx.ds.var_names])
     return mt[np.argsort(-ctx.control_mean()[mt])][:k]
 ```
 
@@ -53,7 +53,7 @@ double-checked-lock accessor on `Context`.
 ### Composing subsets
 
 Because a rule is an ordinary function, a composed space is just a rule that calls other rules.
-`combine_subsets` folds their selections with a numpy set operation, and nests to any depth:
+`combine_subsets` folds their selections with a set operation from `OPS`, and nests to any depth:
 
 ```python
 @SPACES.subset("miller_panel", description="HVG union perturbed genes — the panel of Miller et al. 2025")

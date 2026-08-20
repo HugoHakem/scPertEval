@@ -137,13 +137,6 @@ perturbed-genes panel of {cite}`Miller_2025`, written as an ordinary rule that f
 others. If the space you need isn't here, see
 [Add a feature space](building-blocks.md#add-a-feature-space).
 
-Each is one row of a table in `spaces.py`: `SUBSETS` for the gene subsets and
-`TRANSFORMS` for `pca_<k>`, which replaces the gene axis rather than narrowing it. The
-parameterised spaces take their value from a protocol template (`top_<k>`, `degs_<padj>`,
-`heg_<k>`, `hvg_<k>`, `pca_<k>`; the instance registered at import is shown). Any two or more subsets combine into a new space; `miller_panel` above is built that way, as
-`combine_space("miller_panel", HVG.register(8192), PERTURBED_GENES.register())`. If the space you need isn't here, see
-[Add a feature space](building-blocks.md#add-a-feature-space).
-
 **DE methods** (the `--de-method` choice)
 
 ```bash
