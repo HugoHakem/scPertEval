@@ -44,6 +44,8 @@ DE backends, feature spaces, control sources, and calibrators.
     SpaceRegistry
     Space
     combine_subsets
+    cached
+    DatasetScope
 ```
 
 ## DE backends

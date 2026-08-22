@@ -114,8 +114,11 @@ class Space:
     per_pert: bool = False
     #: ``False`` for a space that replaces the gene axis rather than narrowing it.
     is_subset: bool = True
-    #: Optional ``prepare(ctx, names)`` warm-up hook (transforms only).
-    prepare: Callable | None = None
+    #: Optional ``precompute(ctx, value)`` run during :meth:`~scperteval.context.Context.warm`,
+    #: before the per-perturbation loop, so heavy setup happens while the machine is idle rather
+    #: than inside the loop (transforms only). Purely an optimisation: the rule must stay correct
+    #: if it never runs.
+    precompute: Callable | None = None
 
     @property
     def label(self) -> str:
@@ -170,17 +173,18 @@ class SpaceRegistry(Registry):
 
         return deco
 
-    def transform(self, name: str, *, default=None, description="", prepare=None) -> Callable:
+    def transform(self, name: str, *, default=None, description="", precompute=None) -> Callable:
         """Decorator: define a space that replaces the gene axis instead of narrowing it.
 
         The rule is ``(X, ctx, pert, value) -> dense cells × features array``, built directly, so
-        the space has no gene selection and cannot be composed. ``prepare(ctx, names)`` optionally
-        builds shared structure once before a run (see :meth:`~scperteval.context.Context.warm`);
-        it is purely an optimisation and must be idempotent.
+        the space has no gene selection and cannot be composed. ``precompute(ctx, value)``
+        optionally runs the space's heavy setup during
+        :meth:`~scperteval.context.Context.warm`, before the per-perturbation loop; it is purely
+        an optimisation, so the rule must stay correct without it.
         """
 
         def deco(rule: Callable) -> Callable:
-            self._define(Space(name, rule, _parameter_of(rule, 3), default, description, False, False, prepare))
+            self._define(Space(name, rule, _parameter_of(rule, 3), default, description, False, False, precompute))
             return rule
 
         return deco
@@ -231,7 +235,7 @@ class SpaceRegistry(Registry):
 
             self.add(key, apply, select=select, global_space=not space.per_pert, **common)
         else:
-            self.add(key, _bind_transform(space.rule, value), global_space=True, prepare=space.prepare, **common)
+            self.add(key, _bind_transform(space.rule, value), global_space=True, precompute=space.precompute, **common)
         return key
 
 

@@ -15,6 +15,8 @@ import numpy as np
 
 from .blocks.de import DE_METHODS, _moments
 from .blocks.spaces import SPACES
+from .blocks.spaces.cache import DatasetScope
+from .blocks.spaces.helpers import control_mean
 from .dataset import Dataset, to_dense
 from .reference import Reference
 from .sources import SOURCES
@@ -40,10 +42,7 @@ class CacheStore:
         self.lock = threading.RLock()
         self.de_results: dict = {}
         self.moments: dict = {}
-        self.pca_fits: dict = {}  # fit-size -> fitted PCA; each size fit once and never replaced
-        self.control_mean: np.ndarray | None = None
-        self.control_hvg_dispersion: np.ndarray | None = None
-        self.perturbed_gene_indices: np.ndarray | None = None
+        self.memo: dict = {}  # (function, params) -> value, for @cached dataset computations
         self.reference: Reference | None = None
         self.reference_projections: dict = {}
         self.reference_sums: tuple | None = None
@@ -134,17 +133,14 @@ class Context:
         if any(p.representation == "de" for p in protocols):
             self._ensure_reference_sums()
             self._moments("control", None)
-        # A transform space may declare a `prepare` hook (see `SpaceRegistry.transform`): run each
-        # distinct hook once with the full set of its requested variant names, so the space can
-        # do its one-time shared precompute before the per-perturbation loop. Runs before the
-        # projection loop below so global spaces are ready when it reads them.
-        hooks: dict[Callable, set[str]] = {}
+        # A space may declare a `precompute` hook (see `SpaceRegistry.transform`): run its heavy
+        # setup here, while the machine is idle and BLAS can use every thread, rather than inside
+        # the per-perturbation loop. Repeat calls are cache hits, so the list needs no de-duping.
+        # Runs before the projection loop below so global spaces are ready when it reads them.
         for p in protocols:
-            hook = SPACES.meta(p.space).get("prepare")
-            if hook is not None:
-                hooks.setdefault(hook, set()).add(p.space)
-        for hook, names in hooks.items():
-            hook(self, names)
+            meta = SPACES.meta(p.space)
+            if meta.get("precompute") is not None:
+                meta["precompute"](self, meta["value"])
         for space in {
             p.space for p in protocols if p.representation == "population" and SPACES.meta(p.space).get("global_space")
         }:
@@ -307,69 +303,16 @@ class Context:
         var = np.maximum((sq / k - mean * mean) * (k / max(k - 1, 1)), 0.0)
         return mean, var, k
 
+    def scope(self):
+        """The prepare-scoped view a ``@cached`` dataset computation is given.
+
+        Only settings fixed when the handle was prepared — never per-call config, which the
+        shared cache outlives.
+        """
+        from .runner import _n_workers  # local: runner imports this module
+
+        return DatasetScope(self.ds, self.cfg.seed, _n_workers(self.cfg), self.cfg.subsample)
+
     def control_mean(self):
-        """The control centroid (cached)."""
-        if self._store.control_mean is None:
-            with self._init_lock:
-                if self._store.control_mean is None:
-                    self._store.control_mean = self.ds.control_mean()
-        return self._store.control_mean
-
-    def control_hvg_dispersion(self):
-        """Per-gene normalized dispersion of the control cells (cached)."""
-        if self._store.control_hvg_dispersion is None:
-            with self._init_lock:
-                if self._store.control_hvg_dispersion is None:
-                    self._store.control_hvg_dispersion = self.ds.control_hvg_dispersion()
-        return self._store.control_hvg_dispersion
-
-    def perturbed_gene_indices(self):
-        """``var_names`` indices of the genes targeted by a retained perturbation (cached)."""
-        if self._store.perturbed_gene_indices is None:
-            with self._init_lock:
-                if self._store.perturbed_gene_indices is None:
-                    self._store.perturbed_gene_indices = self.ds.perturbed_gene_indices()
-        return self._store.perturbed_gene_indices
-
-    def pca(self, k=50):
-        """A fitted PCA whose top ``k`` components a ``pca_<k>`` space slices.
-
-        Fits are cached per fit-size (``max(k, 50)``) and **never replaced**, so a given ``k``
-        always resolves to the same basis regardless of call order. A later, larger ``k`` adds a
-        separate fit rather than refitting the shared slot — sklearn's PCA is not basis-stable
-        across ``n_components`` (the solver switches, and randomized SVD is not nested), so slicing
-        a smaller ``pca_k`` out of a larger fit would silently change its result and desync anything
-        (e.g. the cached reference projection) already projected through the old basis.
-        """
-        n = max(k, 50)
-        fit = self._store.pca_fits.get(n)
-        if fit is None:
-            with self._init_lock:
-                fit = self._store.pca_fits.get(n)
-                if fit is None:
-                    fit = self._fit_pca(n)
-                    self._store.pca_fits[n] = fit
-        return fit
-
-    PCA_FIT_CAP = 50000
-
-    def _fit_pca(self, n_components):
-        """Fit PCA on (nearly) all cells.
-
-        The subsample cap is for the O(n^2) distance populations, not the PCA basis, which
-        needs many cells to be stable.
-        """
-        from sklearn.decomposition import PCA
-        from threadpoolctl import threadpool_limits
-
-        from .runner import _n_workers
-
-        n = self.ds.adata.n_obs
-        idx = np.arange(n)
-        if n > self.PCA_FIT_CAP:
-            idx = np.sort(np.random.default_rng(self.cfg.seed).choice(n, self.PCA_FIT_CAP, replace=False))
-        X = to_dense(self.ds.adata.X[idx]).astype(np.float64)
-        # sklearn's bundled BLAS/OpenMP only loads with the import above, after run_all()'s own
-        # threadpool_limits already scanned -- re-scan here so it's actually caught and capped
-        with threadpool_limits(limits=_n_workers(self.cfg)):
-            return PCA(n_components=min(n_components, *X.shape), random_state=self.cfg.seed).fit(X)
+        """The control centroid (cached). Kept as a method: sources and centering both read it."""
+        return control_mean(self)

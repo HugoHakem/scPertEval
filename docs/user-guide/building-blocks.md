@@ -45,9 +45,20 @@ def perturbed_genes(ctx, pert, value=None):
 `scperteval list spaces` shows `mito_<k>` and `perturbed_genes` accordingly. Declaring a
 parameter without a default (or a default without a parameter) is an error at import.
 
-**Adding a cached statistic.** If your rule needs a new per-gene statistic over the whole
-dataset, follow `control_hvg_dispersion`: a method on `Dataset`, a slot on `CacheStore`, and a
-double-checked-lock accessor on `Context`.
+**Computations over the whole dataset** go in
+[`helpers.py`](https://github.com/Virtual-Cell-Research-Community/scPertEval/blob/main/src/scperteval/blocks/spaces/helpers.py),
+decorated with `@cached` so they run once per dataset instead of once per perturbation:
+
+```python
+@cached
+def control_dispersion(data):
+    """Per-gene normalized dispersion of the control cells."""
+    ...                                  # data.ds, data.seed, data.threads
+```
+
+Your rule then calls it as `control_dispersion(ctx)`. The body is handed a `DatasetScope` —
+the dataset plus the settings fixed at `prepare()` time — so a cached value can't accidentally
+depend on per-call options like `--de-method`, which the cache would outlive.
 
 ### Composing subsets
 
@@ -77,11 +88,12 @@ def pca(X, ctx, pert, k):
     return ctx.pca(k).transform(to_dense(X))[:, :k]
 ```
 
-**Advanced — `prepare`.** Some transforms require expensive operations over the whole dataset before they
-can run — PCA, for one. Pass `prepare=<callable>` to do that setup once before scoring starts,
-instead of inside the parallel loop. It is an optimisation only: the rule must still work if it
-never runs, and it must be idempotent. `pca_<k>` does this — see `_fit_pca` in
-[`catalog.py`](https://github.com/Virtual-Cell-Research-Community/scPertEval/blob/main/src/scperteval/blocks/spaces/catalog.py).
+**Advanced — `precompute`.** A `@cached` helper is computed the first time a rule asks for it,
+which is inside the parallel scoring loop. For something heavy enough to want the machine's
+threads to itself — PCA, for one — pass `precompute=<callable>` so it happens before the loop
+instead. It is an optimisation only: the rule must still work if it never runs. `pca_<k>` does
+this — see `pca_for` in
+[`helpers.py`](https://github.com/Virtual-Cell-Research-Community/scPertEval/blob/main/src/scperteval/blocks/spaces/helpers.py).
 
 ## Add a DE method
 

@@ -17,6 +17,7 @@ from conftest import make_cfg
 
 from scperteval.blocks.spaces import OPS, SPACES, combine_subsets
 from scperteval.blocks.spaces.catalog import full, heg, hvg, perturbed_and_hvgs, perturbed_genes
+from scperteval.blocks.spaces.helpers import targeted_genes
 from scperteval.calibrators import CALIBRATORS
 from scperteval.context import Context
 from scperteval.dataset import Dataset
@@ -81,8 +82,7 @@ def test_perturbed_gene_indices_matches_var_names_and_skips_non_gene_labels():
     adata.obs["perturbation"] = ["control"] * 10 + ["g1"] * 10 + ["g2+g4"] * 10 + ["drugX"] * 10
 
     cfg = make_cfg(min_cells=5)
-    ds = Dataset(adata, cfg)
-    idx = ds.perturbed_gene_indices()
+    idx = targeted_genes(Context(Dataset(adata, cfg), cfg))
     assert sorted(idx.tolist()) == [1, 2, 4]
     assert np.issubdtype(idx.dtype, np.integer)  # float indices would fail to index X
 
@@ -97,7 +97,7 @@ def test_perturbed_gene_indices_raises_when_no_label_is_a_gene():
 
     cfg = make_cfg(min_cells=5)
     with pytest.raises(ValueError, match="no perturbation label matches a gene"):
-        Dataset(adata, cfg).perturbed_gene_indices()
+        targeted_genes(Context(Dataset(adata, cfg), cfg))
 
 
 def _ctx_10_genes():

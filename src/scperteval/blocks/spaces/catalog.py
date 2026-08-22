@@ -20,6 +20,7 @@ from __future__ import annotations
 import numpy as np
 
 from ...dataset import to_dense
+from .helpers import control_dispersion, control_mean, pca_for, targeted_genes
 from .registry import OPS, SPACES, combine_subsets
 
 
@@ -47,13 +48,13 @@ def heg(ctx, pert, k):
 
     Dataset-wide, so the same panel serves every perturbation, unlike ``top``/``degs``.
     """
-    return np.argsort(-ctx.control_mean())[:k]
+    return np.argsort(-control_mean(ctx))[:k]
 
 
 @SPACES.subset("hvg", default=2000, description="top {v} genes by control-condition normalized dispersion")
 def hvg(ctx, pert, k):
     """The k most variable genes in the control cells, by scanpy's ``"seurat"`` dispersion."""
-    return np.argsort(-ctx.control_hvg_dispersion())[:k]
+    return np.argsort(-control_dispersion(ctx))[:k]
 
 
 @SPACES.subset("perturbed_genes", description="genes targeted by a perturbation in the dataset")
@@ -63,7 +64,7 @@ def perturbed_genes(ctx, pert, value=None):
     Their own expression is the most direct readout that a perturbation took effect, and they
     aren't necessarily variable, so this is meant to be unioned with another subset.
     """
-    return ctx.perturbed_gene_indices()
+    return targeted_genes(ctx)
 
 
 @SPACES.subset("perturbed_and_hvgs", description="HVG union perturbed genes — a panel introduced in Miller et al. 2025")
@@ -72,20 +73,12 @@ def perturbed_and_hvgs(ctx, pert, value=None):
     return combine_subsets(ctx, OPS.union, hvg(ctx, pert, 8192), perturbed_genes(ctx, pert))
 
 
-def _fit_pca(ctx, names):
-    """Fit every requested ``pca_<k>`` before the run.
-
-    sklearn's PCA is not basis-stable across ``n_components``, so a smaller ``pca_k`` can't be
-    sliced out of a larger fit — each size is fit and cached separately.
-    """
-    for name in names:
-        ctx.pca(int(name.rsplit("_", 1)[1]))
-
-
-@SPACES.transform("pca", default=50, prepare=_fit_pca, description="top {v} principal components (fit on the dataset)")
+@SPACES.transform(
+    "pca", default=50, precompute=pca_for, description="top {v} principal components (fit on the dataset)"
+)
 def pca(X, ctx, pert, k):
     """The top k principal components, from a PCA fit once on the dataset and shared."""
-    return ctx.pca(k).transform(to_dense(X))[:, :k]
+    return pca_for(ctx, k).transform(to_dense(X))[:, :k]
 
 
 # A space is created when a protocol or a `Param` asks for it. `full` is created here because
