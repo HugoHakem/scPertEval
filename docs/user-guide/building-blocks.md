@@ -19,8 +19,7 @@ def mito(ctx, pert, k):
     return mt[np.argsort(-ctx.control_mean()[mt])][:k]
 ```
 
-That's it — one edit, one place. `mito_<k>` now appears in `scperteval list spaces`, and a
-protocol can use it at any `k`.
+`mito_<k>` now appears in `scperteval list spaces`, and a protocol can use it at any `k`.
 
 **The rule** returns a column selection into the *full* gene axis — an integer array, or a
 slice — never positions into some earlier subset, so selections from different spaces can be
@@ -52,12 +51,12 @@ double-checked-lock accessor on `Context`.
 
 ### Composing subsets
 
-Because a rule is an ordinary function, a composed space is just a rule that calls other rules.
-`combine_subsets` folds their selections with a set operation from `OPS`, and nests to any depth:
+A composed space is a rule that calls other rules. `combine_subsets` folds their selections
+with a set operation from `OPS`, and nests to any depth:
 
 ```python
-@SPACES.subset("miller_panel", description="HVG union perturbed genes — the panel of Miller et al. 2025")
-def miller_panel(ctx, pert, value=None):
+@SPACES.subset("perturbed_and_hvgs", description="HVG union perturbed genes — a panel introduced in Miller et al. 2025")
+def perturbed_and_hvgs(ctx, pert, value=None):
     return combine_subsets(ctx, OPS.union, hvg(ctx, pert, 8192), perturbed_genes(ctx, pert))
 ```
 
@@ -78,18 +77,11 @@ def pca(X, ctx, pert, k):
     return ctx.pca(k).transform(to_dense(X))[:, :k]
 ```
 
-The optional `prepare(ctx, names)` hook runs once before a run with every requested variant name,
-for building shared structure up front. It is purely an optimisation: the rule must stay correct
-if it never runs.
-
-### Definitions vs. instances
-
-The catalog above holds **definitions**. A protocol names its space as a concrete string, so a
-definition is turned into a registered **instance** — `heg_1000` — by
-`SPACES.instance("heg", 1000)`. That happens when something asks for it: a `Param` in
-`protocols/table.py` calls it as the CLI value is resolved, so `-p mse_top_k=30` registers
-`top_30` on the spot. Nothing is instantiated merely to appear in a listing —
-`scperteval list spaces` shows the catalog.
+**Advanced — `prepare`.** Some transforms require expensive operations over the whole dataset before they
+can run — PCA, for one. Pass `prepare=<callable>` to do that setup once before scoring starts,
+instead of inside the parallel loop. It is an optimisation only: the rule must still work if it
+never runs, and it must be idempotent. `pca_<k>` does this — see `_fit_pca` in
+[`catalog.py`](https://github.com/Virtual-Cell-Research-Community/scPertEval/blob/main/src/scperteval/blocks/spaces/catalog.py).
 
 ## Add a DE method
 

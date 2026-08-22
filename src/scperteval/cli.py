@@ -127,10 +127,8 @@ def cmd_list(args) -> None:
     elif args.what == "de-methods":
         lines = reg(DE_METHODS, lambda n, m: f"{n:10s} — {m.get('description', '')}")
     elif args.what == "spaces":
-        # The catalog, not the registered instances: `heg_<k>` says more than whichever k
-        # happened to be instantiated, and a space is only instantiated once something uses it.
         lines = [
-            f"{s.label:17s} — {s.describe()}" + (f" (default {s.default:g})" if s.parameter else "")
+            f"{s.label:19s} — {s.describe()}" + (f" (default {s.default:g})" if s.parameter else "")
             for s in SPACES.catalog()
         ]
     elif args.what == "sources":

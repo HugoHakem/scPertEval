@@ -117,25 +117,24 @@ The values those arguments take — feature spaces, control sources, DE methods,
 in each, with descriptions:
 
 **Feature spaces** (the `space` argument)
+These are existing spaces you may choose from. If the space you need isn't here, see
+[Add a feature space](building-blocks.md#add-a-feature-space).
 
 ```bash
 $ scperteval list spaces
-degs_<padj>       — ground-truth DEGs at adjusted p < padj (default 0.05)
-full              — all genes, no transform
-heg_<k>           — top k genes by control-condition expression (default 1000)
-hvg_<k>           — top k genes by control-condition normalized dispersion (default 2000)
-miller_panel      — HVG union perturbed genes — the panel of Miller et al. 2025
-pca_<k>           — top k principal components (fit on the dataset) (default 50)
-perturbed_genes   — genes targeted by a perturbation in the dataset
-top_<k>           — top k genes by ground-truth effect size (default 50)
+degs_<padj>         — ground-truth DEGs at adjusted p < padj (default 0.05)
+full                — all genes, no transform
+heg_<k>             — top k genes by control-condition expression (default 1000)
+hvg_<k>             — top k genes by control-condition normalized dispersion (default 2000)
+pca_<k>             — top k principal components (fit on the dataset) (default 50)
+perturbed_and_hvgs  — HVG union perturbed genes — a panel introduced in Miller et al. 2025
+perturbed_genes     — genes targeted by a perturbation in the dataset
+top_<k>             — top k genes by ground-truth effect size (default 50)
 ```
 
-This is the *catalog* — `heg_<k>` says more than whichever `k` happens to be registered.
-A protocol template supplies the value, and the concrete space (`heg_1000`) is registered at
-that moment. `heg` follows {cite}`AhlmannEltze_2025`; `miller_panel` is the HVG ∪
-perturbed-genes panel of {cite}`Miller_2025`, written as an ordinary rule that folds two
-others. If the space you need isn't here, see
-[Add a feature space](building-blocks.md#add-a-feature-space).
+#### Space Parameters
+ A name written as `heg_<k>` takes a parameter, e.g. heg_k is designed to 
+choose the top k HEGs. In the protocol template, this value of k may be specified.
 
 **DE methods** (the `--de-method` choice)
 

@@ -1,7 +1,6 @@
 """Every feature space, one decorated rule each.
 
-To add one, write a rule and decorate it — that is the whole procedure, and it all happens in
-this file:
+To add one, write a rule and decorate it:
 
 - A **subset** rule is ``(ctx, pert, value)`` returning a column selection into the *full* gene
   axis: an integer array, or a slice. Never positions into some earlier subset, so selections
@@ -67,13 +66,9 @@ def perturbed_genes(ctx, pert, value=None):
     return ctx.perturbed_gene_indices()
 
 
-@SPACES.subset("miller_panel", description="HVG union perturbed genes — the panel of Miller et al. 2025")
-def miller_panel(ctx, pert, value=None):
-    """The gene panel of Miller et al. 2025: the top 8192 HVGs plus every targeted gene.
-
-    8192 is a number of genes; it is unrelated to the identically-valued default ``subsample``,
-    which counts reference cells.
-    """
+@SPACES.subset("perturbed_and_hvgs", description="HVG union perturbed genes — a panel introduced in Miller et al. 2025")
+def perturbed_and_hvgs(ctx, pert, value=None):
+    """The gene panel of Miller et al. 2025: the top 8192 HVGs plus every targeted gene."""
     return combine_subsets(ctx, OPS.union, hvg(ctx, pert, 8192), perturbed_genes(ctx, pert))
 
 
@@ -93,7 +88,6 @@ def pca(X, ctx, pert, k):
     return ctx.pca(k).transform(to_dense(X))[:, :k]
 
 
-# Nothing else is instantiated up front: a space is registered when a protocol row or a `Param`
-# asks for it. `full` is the exception because `Protocol.space` defaults to it, so that one name
-# must always resolve.
+# A space is created when a protocol or a `Param` asks for it. `full` is created here because
+# `Protocol.space` defaults to it, so that name has to resolve before any run.
 SPACES.instance("full")

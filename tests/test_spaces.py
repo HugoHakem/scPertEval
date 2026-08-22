@@ -16,7 +16,7 @@ import pytest
 from conftest import make_cfg
 
 from scperteval.blocks.spaces import OPS, SPACES, combine_subsets
-from scperteval.blocks.spaces.catalog import full, heg, hvg, miller_panel, perturbed_genes
+from scperteval.blocks.spaces.catalog import full, heg, hvg, perturbed_and_hvgs, perturbed_genes
 from scperteval.calibrators import CALIBRATORS
 from scperteval.context import Context
 from scperteval.dataset import Dataset
@@ -154,9 +154,9 @@ def test_combine_subsets_nests_to_any_depth():
     assert other.tolist() != outer.tolist()
 
 
-def test_miller_panel_unions_hvg_with_the_targeted_genes():
+def test_perturbed_and_hvgs_unions_hvg_with_the_targeted_genes():
     ctx = _ctx_10_genes()  # 10 genes, so hvg(8192) degrades to all of them
-    assert set(miller_panel(ctx, "g5").tolist()) == set(hvg(ctx, "g5", 8192).tolist()) | set(
+    assert set(perturbed_and_hvgs(ctx, "g5").tolist()) == set(hvg(ctx, "g5", 8192).tolist()) | set(
         perturbed_genes(ctx, "g5").tolist()
     )
 
@@ -166,7 +166,7 @@ def test_catalog_lists_definitions_and_says_what_each_takes():
     assert labels["heg"] == "heg_<k>"  # parameter name read from the rule's signature
     assert labels["degs"] == "degs_<padj>"
     assert labels["full"] == "full"  # trailing default => takes no parameter
-    assert labels["miller_panel"] == "miller_panel"
+    assert labels["perturbed_and_hvgs"] == "perturbed_and_hvgs"
 
 
 def test_instance_registers_on_demand_and_guards_its_value():
@@ -216,7 +216,7 @@ def test_space_runs_end_to_end_through_the_runner(cfg_factory):
     adata.var_names = genes
     adata.obs["perturbation"] = labels
 
-    panel = SPACES.instance("miller_panel")
+    panel = SPACES.instance("perturbed_and_hvgs")
     proto = replace(PROTOCOLS["energy_distance_top_k"], name="ed_panel", space=panel, param=None)
 
     cfg = cfg_factory(truth="gt_all_cells", calibrator="score")

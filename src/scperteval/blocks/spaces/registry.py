@@ -1,14 +1,14 @@
 """The feature-space registry: the catalog of space definitions, and the instances built from them.
 
-Two levels, deliberately distinct:
+Two levels:
 
 - A **definition** is one entry in the catalog — a rule, plus what it takes and how to
   describe it. Each is declared by decorating a rule in ``catalog.py``, and
   ``scperteval list spaces`` lists them.
 - An **instance** is a definition at one parameter value, registered under a concrete name
   (``"heg_1000"``). A protocol names its space as a string, so an instance must exist before a
-  run can resolve it. :meth:`SpaceRegistry.instance` creates them, and nothing is instantiated
-  except what something actually references.
+  run can resolve it. :meth:`SpaceRegistry.instance` creates one when a protocol or a ``Param``
+  asks for it.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ class SetOps:
     """The set operations :func:`combine_subsets` folds with, named as Python's own set methods.
 
     Exposed as the singleton ``OPS``, so composing a space reads
-    ``combine_subsets(ctx, OPS.union, ...)`` without importing numpy.
+    ``combine_subsets(ctx, OPS.union, ...)``.
     """
 
     #: Genes in either selection.
