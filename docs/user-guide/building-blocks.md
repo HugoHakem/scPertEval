@@ -13,7 +13,7 @@ it, the same way DE methods and control sources are registered. Everything lives
 
 ```python
 @SPACES.subset("mito", default=20, description="top {v} mitochondrial genes by control expression")
-def mito(ctx, pert, k):
+def mito(ctx, k):
     """The k highest-expressed mitochondrial genes."""
     mt = np.flatnonzero([g.startswith("MT-") for g in ctx.ds.var_names])
     return mt[np.argsort(-ctx.control_mean()[mt])][:k]
@@ -31,13 +31,15 @@ protocol, so anything computed over the whole dataset belongs behind a `Context`
 genes vary by perturbation, so scPertEval knows it can't compute the selection once and share it:
 
 ```python
-def heg(ctx, k): ...             # dataset-wide
-def top(ctx, pert, k): ...       # per-perturbation
+def full(ctx): ...               # dataset-wide, no parameter
+def heg(ctx, k): ...             # dataset-wide, takes k
+def targets(ctx, pert): ...      # per-perturbation, no parameter
+def top(ctx, pert, k): ...       # per-perturbation, takes k
 ```
 
 There is no flag to set. A rule that doesn't name `pert` is never passed one, so reaching for it
-raises `NameError` rather than silently scoring every perturbation on one panel. Arguments are
-passed by keyword, so their order doesn't matter.
+raises `NameError` rather than silently scoring every perturbation on one panel. `pert` comes
+first when present; any other shape is rejected at registration.
 
 **The decorator** carries the metadata. `default` is the parameter value used when a caller
 doesn't supply one; `{v}` in the description is filled in with it.
@@ -47,7 +49,7 @@ with a default means it takes none:
 
 ```python
 @SPACES.subset("perturbed_genes", description="genes targeted by a perturbation")
-def perturbed_genes(ctx, pert, value=None):
+def perturbed_genes(ctx):
     return targeted_genes(ctx)  # a @cached helper in helpers.py, see below
 ```
 
@@ -97,9 +99,9 @@ selection and can't be composed. Use `@SPACES.transform`, whose rule takes the c
 the finished array:
 
 ```python
-@SPACES.transform("pca", default=50, prepare=_fit_pca, description="top {v} principal components")
-def pca(X, ctx, pert, k):
-    return ctx.pca(k).transform(to_dense(X))[:, :k]
+@SPACES.transform("pca", default=50, precompute=pca_for, description="top {v} principal components")
+def pca(X, ctx, k):
+    return pca_for(ctx, k).transform(to_dense(X))[:, :k]
 ```
 
 **Advanced — `precompute`.** A `@cached` helper is computed the first time a rule asks for it,

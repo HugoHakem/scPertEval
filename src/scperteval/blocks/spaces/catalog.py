@@ -2,13 +2,13 @@
 
 To add one, write a rule and decorate it:
 
-- A **subset** rule is ``(ctx, pert, value)`` returning a column selection into the *full* gene
-  axis: an integer array, or a slice. Never positions into some earlier subset, so selections
-  from different spaces can be folded together. Give the trailing argument a default to declare
-  that the space takes no parameter, and pass ``per_pert=True`` when the choice varies by
-  perturbation.
-- A **transform** rule is ``(X, ctx, pert, value)`` returning the finished dense array, for a
-  space that replaces the gene axis rather than narrowing it.
+- A **subset** rule returns a column selection into the *full* gene axis: an integer array, or a
+  slice. Never positions into some earlier subset, so selections from different spaces can be
+  folded together. It takes one of four shapes — ``(ctx)``, ``(ctx, k)``, ``(ctx, pert)``, or
+  ``(ctx, pert, k)``. Naming ``pert`` is how the space says its genes vary by perturbation; omit
+  it and the space is dataset-wide, and the reference is projected once and shared.
+- A **transform** rule returns the finished dense array, for a space that replaces the gene axis
+  rather than narrowing it. Same shapes, with the cells first: ``(X, ctx, k)`` and so on.
 
 The rule runs once per perturbation per protocol, so anything computed over the whole dataset
 belongs behind a :class:`~scperteval.context.Context` cache — ``ctx.control_mean()`` and friends —
@@ -25,7 +25,7 @@ from .registry import OPS, SPACES
 
 
 @SPACES.subset("full", description="all genes, no transform")
-def full(ctx, value=None):
+def full(ctx):
     """Every gene. Returns a slice, so applying the identity space is a view rather than a copy."""
     return slice(None)
 
@@ -58,7 +58,7 @@ def hvg(ctx, k):
 
 
 @SPACES.subset("perturbed_genes", description="genes targeted by a perturbation in the dataset")
-def perturbed_genes(ctx, value=None):
+def perturbed_genes(ctx):
     """The genes the perturbations target — for a knockdown screen, the knocked-down genes.
 
     Their own expression is the most direct readout that a perturbation took effect, and they

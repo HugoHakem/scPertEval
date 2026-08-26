@@ -14,6 +14,7 @@ from __future__ import annotations
 import numpy as np
 from conftest import make_cfg, make_dataset
 
+from scperteval.blocks.spaces import SPACES
 from scperteval.blocks.spaces.helpers import fitted_pca, pca_for
 from scperteval.context import Context
 from scperteval.dataset import Dataset
@@ -35,6 +36,10 @@ def _ctx(ng=120):
     # with ng=120, that pca_50 uses the randomized solver while pca_100 uses full — the non-nested
     # regime where slicing pca_50 out of the pca_100 fit would change its result.
     cfg = make_cfg()
+    # Instances are created on demand, so register the sizes these tests look up by name --
+    # otherwise a test only passes when some earlier test in the same process resolved pca_k first.
+    SPACES.instance("pca", 50)
+    SPACES.instance("pca", 100)
     return Context(Dataset(make_dataset(ng=ng), cfg), cfg)
 
 

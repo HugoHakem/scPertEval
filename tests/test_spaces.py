@@ -280,3 +280,32 @@ def test_importing_the_package_defines_the_catalog():
     out = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True)
     assert out.returncode == 0, out.stderr
     assert int(out.stdout.strip()) >= 8
+
+
+def test_a_per_perturbation_transform_is_not_registered_as_shared():
+    """A transform that varies by perturbation must re-project the reference, like a subset does.
+
+    Otherwise the reference is built once at ``pert=None`` and shared, while each candidate is
+    built with its own ``pert`` -- comparing two populations in different feature spaces.
+    """
+
+    @SPACES.transform("pertdep", default=2, description="varies by perturbation")
+    def pertdep(X, ctx, pert, k):
+        return np.asarray(X)[:, :k]
+
+    assert next(s for s in SPACES.catalog() if s.name == "pertdep").per_pert
+    assert SPACES.meta(SPACES.instance("pertdep", 2))["global_space"] is False
+
+
+@pytest.mark.parametrize(
+    "rule",
+    [
+        lambda ctx, k, pert: None,  # pert after the parameter
+        lambda ctx, k, pert=None: None,  # ...and defaulted, which would read as dataset-wide
+        lambda ctx, a, b: None,  # two parameters
+    ],
+)
+def test_a_rule_of_the_wrong_shape_is_rejected_at_registration(rule):
+    """`pert` comes first when present; anything else would be silently mis-classified."""
+    with pytest.raises(TypeError, match="does not match a space rule's shape"):
+        SPACES.subset("badshape", default=1, description="…")(rule)

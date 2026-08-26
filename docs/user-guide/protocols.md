@@ -69,7 +69,7 @@ That row is the spec; parameters include:
 | `name` | selects the protocol on the CLI (`-p mae`) |
 | `representation` | the shape of each datapoint your function receives (see below) |
 | `scope` | `"perturbation"` (default) or `"dataset"` — how many perturbations at once (see below) |
-| `space` | which features to score — `full` (default), or a feature space like `top_50` |
+| `space` | which features to score — `full` (default), or a registered space name, e.g. `SPACES.instance("top", 50)` |
 | `centering` | a centroid **source name** to subtract before scoring, e.g. `"control_mean"` or `"all_perturbed_mean"` (default: none) |
 | `default_positive` / `default_negative` | optional — declare a control default only when the row deviates from the generic default for its representation; omit otherwise (controls are resolved at runtime, see **Control sources** under [Building blocks](#building-blocks--the-palette)) |
 | `better` | `"higher"` or `"lower"` — which direction is an improvement |
@@ -210,7 +210,7 @@ Protocol("cosine", M.cosine, representation="centroid", **_PB, **_LOWER)
 top-50 DEGs:
 
 ```python
-Protocol("mae_top50", M.mae, representation="centroid", space="top_50", **_PB, **_LOWER)
+Protocol("mae_top50", M.mae, representation="centroid", space=SPACES.instance("top", 50), **_PB, **_LOWER)
 ```
 
 **Expose the space as a knob (parameterised).** To make `k` adjustable per invocation, add a
@@ -234,7 +234,7 @@ def my_mmd(gt, prediction, ctx):      # gt, prediction are (cells × genes)
 ```
 
 ```python
-Protocol("my_mmd_top50", M.my_mmd, representation="population", space="top_50",
+Protocol("my_mmd_top50", M.my_mmd, representation="population", space=SPACES.instance("top", 50),
          better="lower", perfect=0.0)
 ```
 

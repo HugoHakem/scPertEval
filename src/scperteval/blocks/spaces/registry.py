@@ -50,23 +50,31 @@ _OP_NAMES = {OPS.union: "union", OPS.intersection: "intersection", OPS.differenc
 def _signature_of(rule: Callable, lead: int) -> tuple[bool, str | None]:
     """What a rule asks for: whether it wants ``pert``, and its parameter's name.
 
-    Both are read off the signature so neither can be declared wrong. ``lead`` counts the fixed
+    Both are read off the signature, so neither can be declared wrong. ``lead`` counts the fixed
     leading arguments — 1 for a selection rule ``(ctx, …)``, 2 for a transform ``(X, ctx, …)``.
 
-    Naming a parameter ``pert`` is how a rule asks for the perturbation, and *is* the declaration
-    that it varies by perturbation. A rule that doesn't name it is never passed one, so reaching
-    for it is a ``NameError`` rather than a silently stale panel. A trailing argument with a
-    default means the space takes no parameter::
+    A rule must take one of four shapes. Naming ``pert`` is how it asks for the perturbation, and
+    *is* the declaration that its result varies by perturbation::
 
-        heg(ctx, k)            -> (False, "k")      dataset-wide, takes k
-        top(ctx, pert, k)      -> (True,  "k")      per-perturbation, takes k
-        full(ctx, value=None)  -> (False, None)     dataset-wide, no parameter
+        (ctx)                (ctx, k)                dataset-wide
+        (ctx, pert)          (ctx, pert, k)          per-perturbation
+
+    Anything else is rejected here rather than mis-read: ``(ctx, k, pert)`` would otherwise
+    register as dataset-wide and score every perturbation on one panel, silently.
     """
-    params = list(inspect.signature(rule).parameters.values())
-    takes_pert = len(params) > lead and params[lead].name == "pert"
-    tail = params[lead + takes_pert :]
-    parameter = tail[0].name if tail and tail[0].default is inspect.Parameter.empty else None
-    return takes_pert, parameter
+    params = [p.name for p in inspect.signature(rule).parameters.values()]
+    tail = params[lead:]
+    takes_pert = bool(tail) and tail[0] == "pert"
+    rest = tail[1:] if takes_pert else tail
+    if len(rest) > 1 or "pert" in rest:
+        shape = f"({', '.join(params)})"
+        lead_args = "ctx" if lead == 1 else "X, ctx"
+        raise TypeError(
+            f"rule {rule.__name__}{shape} does not match a space rule's shape. Expected one of "
+            f"({lead_args}), ({lead_args}, <param>), ({lead_args}, pert), or "
+            f"({lead_args}, pert, <param>) — pert comes first when present."
+        )
+    return takes_pert, (rest[0] if rest else None)
 
 
 @dataclass(frozen=True)
@@ -75,8 +83,7 @@ class Space:
 
     #: Catalog name (``"heg"``). Instances are ``"<name>_<value>"``, or ``"<name>"`` unparameterised.
     name: str
-    #: The rule: ``(ctx, …)`` for a subset, ``(X, ctx, …)`` for a transform. Called by keyword,
-    #: so parameter order never matters.
+    #: The rule: ``(ctx, …)`` for a subset, ``(X, ctx, …)`` for a transform.
     rule: Callable
     #: The rule's parameter name (``"k"``), read from its signature; ``None`` if it takes none.
     parameter: str | None
@@ -234,7 +241,7 @@ class SpaceRegistry(Registry):
         selects = [self.meta(n)["select"] for n in names]
         per_pert = any(not self.meta(n)["global_space"] for n in names)
 
-        def rule(ctx, pert, value=None):
+        def rule(ctx, pert):
             # Canonicalise each selection to integer positions -- a rule may return a slice, and
             # the set operations need real indices. Every rule indexes the same full gene axis.
             genes = np.arange(len(ctx.ds.var_names))
@@ -279,12 +286,18 @@ class SpaceRegistry(Registry):
 
             self.add(key, apply, select=select, global_space=not space.per_pert, **common)
         else:
-            self.add(key, _bound_transform(space, value), global_space=True, precompute=space.precompute, **common)
+            self.add(
+                key,
+                _bound_transform(space, value),
+                global_space=not space.per_pert,
+                precompute=space.precompute,
+                **common,
+            )
         return key
 
 
 def _bind(space: Space, value):
-    """The rule's arguments after ``ctx``, by keyword, so their order never matters."""
+    """The rule's arguments after ``ctx``, by keyword."""
     kwargs = {}
     if space.parameter is not None:
         kwargs[space.parameter] = value
