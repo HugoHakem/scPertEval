@@ -47,46 +47,6 @@ _OP_NAMES = {OPS.union: "union", OPS.intersection: "intersection", OPS.differenc
 ``OPS.difference``."""
 
 
-def _fold_selections(ctx, op: Callable, *selections):
-    """Fold gene selections together with a set operation from ``OPS``.
-
-    The primitive behind :meth:`SpaceRegistry.combine_subsets`; compose spaces through that
-    instead, so ``per_pert`` is derived from the operands rather than declared.
-
-    A composed space is an ordinary subset rule that calls the rules it composes and folds their
-    selections here, so it nests to any depth — a fold can take the result of another fold.
-    Selections may be slices; each is canonicalised to integer positions first, since the set
-    operations need real indices, and every rule indexes the same full gene axis so they line up.
-
-    Parameters
-    ----------
-    ctx : ~scperteval.context.Context
-        Supplies the gene axis the selections index into.
-    op : Callable
-        One of ``OPS`` — ``OPS.union``, ``OPS.intersection``, or ``OPS.difference``. Applied
-        left to right, so ``OPS.difference`` subtracts the rest from the first.
-    *selections
-        Two or more already-computed selections.
-
-    Returns
-    -------
-    numpy.ndarray
-        Integer gene positions.
-
-    Examples
-    --------
-    The HVG panel unioned with the targeted genes, and the complement of the HVG panel::
-
-        combine_subsets(ctx, OPS.union, hvg(ctx, pert, 8192), perturbed_genes(ctx, pert))
-        combine_subsets(ctx, OPS.difference, full(ctx, pert), hvg(ctx, pert, 2000))
-    """
-    genes = np.arange(len(ctx.ds.var_names))
-    result = genes[selections[0]]
-    for selection in selections[1:]:
-        result = op(result, genes[selection])
-    return result
-
-
 def _signature_of(rule: Callable, lead: int) -> tuple[bool, str | None]:
     """What a rule asks for: whether it wants ``pert``, and its parameter's name.
 
@@ -275,7 +235,13 @@ class SpaceRegistry(Registry):
         per_pert = any(not self.meta(n)["global_space"] for n in names)
 
         def rule(ctx, pert, value=None):
-            return _fold_selections(ctx, op, *(select(ctx, pert) for select in selects))
+            # Canonicalise each selection to integer positions -- a rule may return a slice, and
+            # the set operations need real indices. Every rule indexes the same full gene axis.
+            genes = np.arange(len(ctx.ds.var_names))
+            result = genes[selects[0](ctx, pert)]
+            for select in selects[1:]:
+                result = op(result, genes[select(ctx, pert)])
+            return result
 
         label = _OP_NAMES.get(op, getattr(op, "__name__", "combination"))
         self._define(Space(name, rule, None, None, description or f"{label} of {', '.join(names)}", True, per_pert))

@@ -18,7 +18,6 @@ from conftest import make_cfg
 from scperteval.blocks.spaces import OPS, SPACES
 from scperteval.blocks.spaces.catalog import full, heg, hvg, perturbed_genes
 from scperteval.blocks.spaces.helpers import targeted_genes
-from scperteval.blocks.spaces.registry import _fold_selections
 from scperteval.calibrators import CALIBRATORS
 from scperteval.context import Context
 from scperteval.dataset import Dataset
@@ -118,24 +117,27 @@ def _ctx_10_genes():
 
 
 @pytest.mark.parametrize(
-    ("op", "expected"),
+    ("op", "label", "expected"),
     [
-        (OPS.union, [0, 3, 5, 6, 8]),  # {3, 6, 8} | {0, 3, 5}
-        (OPS.intersection, [3]),  # {3, 6, 8} & {0, 3, 5}
-        (OPS.difference, [6, 8]),  # {3, 6, 8} - {0, 3, 5}
+        (OPS.union, "union", [0, 3, 5, 6, 8]),  # {3, 6, 8} | {0, 3, 5}
+        (OPS.intersection, "intersection", [3]),  # {3, 6, 8} & {0, 3, 5}
+        (OPS.difference, "difference", [6, 8]),  # {3, 6, 8} - {0, 3, 5}
     ],
 )
-def test_combine_subsets_applies_the_set_operation(op, expected):
+def test_combine_subsets_applies_the_set_operation(op, label, expected):
     ctx = _ctx_10_genes()
-    got = _fold_selections(ctx, op, heg(ctx, 3), perturbed_genes(ctx))
-    assert got.tolist() == expected
+    name = SPACES.combine_subsets(
+        op, SPACES.instance("heg", 3), SPACES.instance("perturbed_genes"), name=f"heg3_{label}_pert"
+    )
+    assert SPACES.meta(name)["select"](ctx, "g5").tolist() == expected
 
 
 def test_combine_subsets_canonicalises_a_slice_so_full_composes_as_a_complement():
     """full returns a slice; combining must still yield integer positions."""
     ctx = _ctx_10_genes()
-    complement = _fold_selections(ctx, OPS.difference, full(ctx), heg(ctx, 3))
-    assert complement.tolist() == [0, 1, 2, 4, 5, 7, 9]  # 10 genes minus {3, 6, 8}
+    name = SPACES.combine_subsets(OPS.difference, SPACES.instance("full"), SPACES.instance("heg", 3), name="not_heg3")
+    # full returns a slice; combining must still yield integer positions
+    assert SPACES.meta(name)["select"](ctx, "g5").tolist() == [0, 1, 2, 4, 5, 7, 9]  # 10 genes minus {3, 6, 8}
 
 
 def test_combine_subsets_nests_to_any_depth():
