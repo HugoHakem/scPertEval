@@ -15,8 +15,7 @@ import numpy as np
 
 from .blocks.de import DE_METHODS, _moments
 from .blocks.spaces import SPACES
-from .blocks.spaces.cache import DatasetScope
-from .blocks.spaces.helpers import control_mean
+from .caching import DatasetScope, cached
 from .dataset import Dataset, to_dense
 from .reference import Reference
 from .sources import SOURCES
@@ -46,6 +45,11 @@ class CacheStore:
         self.reference: Reference | None = None
         self.reference_projections: dict = {}
         self.reference_sums: tuple | None = None
+
+
+@cached
+def _control_mean(scope: DatasetScope) -> np.ndarray:
+    return scope.ds.control_mean()
 
 
 class Context:
@@ -315,4 +319,4 @@ class Context:
 
     def control_mean(self):
         """The control centroid (cached). Kept as a method: sources and centering both read it."""
-        return control_mean(self)
+        return _control_mean(self)

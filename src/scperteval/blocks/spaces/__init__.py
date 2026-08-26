@@ -8,7 +8,6 @@ instances built from them.
 from __future__ import annotations
 
 from . import catalog  # imported for its side effect: decorating the rules defines the catalog
-from .cache import DatasetScope, cached
 from .registry import OPS, SPACES, SetOps, Space, SpaceRegistry, combine_subsets
 
-__all__ = ["OPS", "SPACES", "DatasetScope", "SetOps", "Space", "SpaceRegistry", "cached", "catalog", "combine_subsets"]
+__all__ = ["OPS", "SPACES", "SetOps", "Space", "SpaceRegistry", "catalog", "combine_subsets"]

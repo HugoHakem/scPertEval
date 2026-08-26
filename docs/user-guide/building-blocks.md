@@ -39,7 +39,7 @@ with a default means it takes none:
 ```python
 @SPACES.subset("perturbed_genes", description="genes targeted by a perturbation")
 def perturbed_genes(ctx, pert, value=None):
-    return ctx.perturbed_gene_indices()
+    return targeted_genes(ctx)  # a @cached helper in helpers.py, see below
 ```
 
 `scperteval list spaces` shows `mito_<k>` and `perturbed_genes` accordingly. Declaring a
@@ -51,12 +51,13 @@ decorated with `@cached` so they run once per dataset instead of once per pertur
 
 ```python
 @cached
-def control_dispersion(data):
+def control_dispersion(scope: DatasetScope):
     """Per-gene normalized dispersion of the control cells."""
-    ...                                  # data.ds, data.seed, data.threads
+    ...  # scope.ds, scope.seed, scope.threads
 ```
 
-Your rule then calls it as `control_dispersion(ctx)`. The body is handed a `DatasetScope` —
+Your rule then calls it as `control_dispersion(ctx)`. The body is handed a `DatasetScope`
+([`scperteval/caching.py`](https://github.com/Virtual-Cell-Research-Community/scPertEval/blob/main/src/scperteval/caching.py)) —
 the dataset plus the settings fixed at `prepare()` time — so a cached value can't accidentally
 depend on per-call options like `--de-method`, which the cache would outlive.
 

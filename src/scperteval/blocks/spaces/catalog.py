@@ -20,7 +20,7 @@ from __future__ import annotations
 import numpy as np
 
 from ...dataset import to_dense
-from .helpers import control_dispersion, control_mean, pca_for, targeted_genes
+from .helpers import control_dispersion, pca_for, targeted_genes
 from .registry import OPS, SPACES, combine_subsets
 
 
@@ -48,7 +48,7 @@ def heg(ctx, pert, k):
 
     Dataset-wide, so the same panel serves every perturbation, unlike ``top``/``degs``.
     """
-    return np.argsort(-control_mean(ctx))[:k]
+    return np.argsort(-ctx.control_mean())[:k]
 
 
 @SPACES.subset("hvg", default=2000, description="top {v} genes by control-condition normalized dispersion")

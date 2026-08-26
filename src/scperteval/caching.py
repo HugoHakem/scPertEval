@@ -1,14 +1,9 @@
-"""Caching for the dataset-level computations a space rule depends on.
+"""Caching for dataset-level computations shared across every call against one prepared dataset.
 
-A rule runs once per perturbation per protocol, so anything computed over the whole dataset — a
-per-gene statistic, a fitted basis — has to be computed once and reused. :func:`cached` does
-that: decorate the computation, and it is evaluated once per prepared dataset and stored on the
-handle's shared cache.
-
-A space may also declare ``precompute=`` (see :class:`~scperteval.blocks.spaces.registry.Space`),
-which only changes *when* that single evaluation happens — during
-:meth:`~scperteval.context.Context.warm`, before the per-perturbation loop, rather than inside
-it. Worth doing when the computation is heavy enough to want the machine's threads to itself.
+Anything computed over the whole dataset -- a per-gene statistic, a fitted basis -- has to be
+computed once and reused, whichever building block needs it: a space rule, a centering source, a
+metric. :func:`cached` does that: decorate the computation, and it is evaluated once per prepared
+dataset and stored on the handle's shared :class:`~scperteval.context.CacheStore`.
 """
 
 from __future__ import annotations
@@ -16,7 +11,11 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import wraps
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .context import Context
+    from .dataset import Dataset
 
 _MISSING = object()  # distinct from None, which a helper may legitimately return
 
@@ -32,7 +31,7 @@ class DatasetScope:
     """
 
     #: The prepared dataset.
-    ds: Any
+    ds: Dataset
     #: Reproducibility seed (``prepare(seed=...)``).
     seed: int
     #: Worker threads this run may use — the budget for BLAS-parallel work.
@@ -54,15 +53,15 @@ def cached(fn: Callable) -> Callable:
     ::
 
         @cached
-        def control_dispersion(data):
-            return ...  # data.ds, data.seed, data.threads
+        def control_dispersion(scope: DatasetScope):
+            return ...  # scope.ds, scope.seed, scope.threads
 
 
         control_dispersion(ctx)  # computed on first call, reused after
     """
 
     @wraps(fn)
-    def call(ctx, *params):
+    def call(ctx: Context, *params: Any) -> Any:
         key, store = (fn, params), ctx._store
         value = store.memo.get(key, _MISSING)
         if value is _MISSING:
