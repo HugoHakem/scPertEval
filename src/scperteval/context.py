@@ -42,6 +42,7 @@ class CacheStore:
         self.de_results: dict = {}
         self.moments: dict = {}
         self.memo: dict = {}  # (function, params) -> value, for @cached dataset computations
+        self.scope: DatasetScope | None = None  # the settings every value here was computed under
         self.reference: Reference | None = None
         self.reference_projections: dict = {}
         self.reference_sums: tuple | None = None
@@ -315,7 +316,19 @@ class Context:
         """
         from .runner import _n_workers  # local: runner imports this module
 
-        return DatasetScope(self.ds, self.cfg.seed, _n_workers(self.cfg), self.cfg.subsample)
+        scope = DatasetScope(self.ds, self.cfg.seed, _n_workers(self.cfg), self.cfg.subsample)
+        if self._store.scope is None:
+            self._store.scope = scope
+        else:
+            # `threads` is excluded: it changes how fast a value is computed, never what it is.
+            was = self._store.scope
+            if was.ds is not scope.ds or (was.seed, was.subsample) != (scope.seed, scope.subsample):
+                raise ValueError(
+                    "this cache holds values computed for a different dataset, seed, or subsample. "
+                    "A CacheStore belongs to one prepare() call -- build a new handle rather than "
+                    "sharing one across settings."
+                )
+        return scope
 
     def control_mean(self):
         """The control centroid (cached). Kept as a method: sources and centering both read it."""

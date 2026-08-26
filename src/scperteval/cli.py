@@ -128,7 +128,9 @@ def cmd_list(args) -> None:
         lines = reg(DE_METHODS, lambda n, m: f"{n:10s} — {m.get('description', '')}")
     elif args.what == "spaces":
         lines = [
-            f"{s.label:19s} — {s.describe()}" + (f" (default {s.default:g})" if s.parameter else "")
+            f"{s.label:19s} — {s.describe()}"
+            + (f" (default {s.default:g})" if s.parameter else "")
+            + (", per perturbation" if s.per_pert else "")
             for s in SPACES.catalog()
         ]
     elif args.what == "sources":

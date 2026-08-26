@@ -13,7 +13,7 @@ from dataclasses import replace
 import anndata as ad
 import numpy as np
 import pytest
-from conftest import make_cfg
+from conftest import make_cfg, make_dataset
 
 from scperteval.blocks.spaces import OPS, SPACES
 from scperteval.blocks.spaces.catalog import full, heg, hvg, perturbed_genes
@@ -340,3 +340,39 @@ def test_a_cached_helper_cannot_be_registered_as_a_space():
         @cached
         def stacked(scope, k):
             return np.arange(k)
+
+
+def test_a_space_that_selects_nothing_is_refused():
+    """An empty panel makes every metric return nan; better to fail at the space."""
+    ctx = _ctx_10_genes()
+    name = SPACES.combine_subsets(
+        OPS.intersection, SPACES.instance("heg", 1), SPACES.instance("hvg", 1), name="disjoint"
+    )
+    if SPACES.meta(name)["select"](ctx, "g5").size == 0:  # the panels don't overlap on this data
+        with pytest.raises(ValueError, match="selected no genes"):
+            SPACES[name](ctx.ds.cells("g5"), ctx, "g5")
+
+
+@pytest.mark.parametrize("value", [0, -5, -0.5])
+def test_a_space_parameter_must_be_positive(value):
+    """Negative values mean three different things across the spaces, none of them useful."""
+    with pytest.raises(ValueError, match="positive number"):
+        SPACES.instance("heg", value)
+
+
+def test_the_inherited_registry_entry_points_are_closed():
+    """One way to define a space, so none can exist outside the catalog the listing reads."""
+    with pytest.raises(TypeError, match=r"@SPACES\.subset"):
+        SPACES.register("old_style", description="…")
+    with pytest.raises(TypeError, match=r"@SPACES\.subset"):
+        SPACES.add("old_style", lambda X, ctx, pert: None, description="…")
+
+
+def test_a_cache_rejects_values_from_a_different_scope():
+    """A CacheStore belongs to one prepare(); sharing one across seeds would serve stale values."""
+    cfg = make_cfg(seed=0)
+    ctx = Context(Dataset(make_dataset(), cfg), cfg)
+    ctx.scope()  # records the scope
+    other = Context(ctx.ds, make_cfg(seed=123), store=ctx._store)
+    with pytest.raises(ValueError, match="different dataset, seed, or subsample"):
+        other.scope()

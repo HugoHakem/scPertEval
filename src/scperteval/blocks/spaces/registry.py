@@ -137,6 +137,21 @@ class SpaceRegistry(Registry):
 
     # -- defining ------------------------------------------------------------------
 
+    def register(self, name: str, **meta):
+        """Not the way to define a space — use :meth:`subset` or :meth:`transform`."""
+        raise TypeError(
+            f"a {self.kind} is defined with @SPACES.subset or @SPACES.transform, not "
+            f"@SPACES.register. One registered the inherited way scores correctly but never "
+            f"appears in `scperteval list spaces`, because the listing reads the catalog."
+        )
+
+    def add(self, name: str, fn, **meta):
+        """Not the way to define a space — use :meth:`subset` or :meth:`transform`."""
+        raise TypeError(
+            f"a {self.kind} is defined with @SPACES.subset or @SPACES.transform, then "
+            f"instantiated with SPACES.instance(...); adding one directly skips the catalog."
+        )
+
     def subset(self, name: str, *, default=None, description="") -> Callable:
         """Decorator: define a space that keeps a subset of the genes.
 
@@ -286,6 +301,12 @@ class SpaceRegistry(Registry):
             key = name
         else:
             value = space.default if value is None else value
+            if not isinstance(value, (int, float)) or isinstance(value, bool) or value <= 0:
+                raise ValueError(
+                    f"{self.kind} {name!r} takes a positive number, got {value!r}. Negative values "
+                    f"do not mean the same thing across spaces -- top/heg/hvg would drop the "
+                    f"strongest genes, degs would select none, pca would truncate its components."
+                )
             key = f"{name}_{value:g}"
         if key in self:
             # Distinct values can format to the same name (0.05 and 0.05000001 are both "0.05").
@@ -299,11 +320,18 @@ class SpaceRegistry(Registry):
             select = _bound_select(space, value)
 
             def apply(X, ctx, pert):
-                return to_dense(X[:, select(ctx, pert)])
+                keep = select(ctx, pert)
+                if isinstance(keep, np.ndarray) and keep.size == 0:
+                    raise ValueError(
+                        f"space {key!r} selected no genes for {pert!r}. Every metric would return "
+                        f"nan rather than fail, so this is refused: widen the space, or check that "
+                        f"its criterion matches the dataset."
+                    )
+                return to_dense(X[:, keep])
 
-            self.add(key, apply, select=select, global_space=not space.per_pert, **common)
+            super().add(key, apply, select=select, global_space=not space.per_pert, **common)
         else:
-            self.add(
+            super().add(
                 key,
                 _bound_transform(space, value),
                 global_space=not space.per_pert,
@@ -322,7 +350,13 @@ def _bind(space: Space, value):
 
 
 def _bound_select(space: Space, value):
-    """``select(ctx, pert)`` for a subset rule, with its parameter bound."""
+    """``select(ctx, pert)`` for a subset rule, with its parameter bound.
+
+    Runs the rule on every call -- once per perturbation per candidate per protocol. For a
+    dataset-wide space the answer is identical every time, so the ranking on top of the cached
+    statistic (an argsort over all genes, ~0.7 ms at 20k genes) is repeated needlessly. Caching it
+    here on ``not space.per_pert`` would fix that; left alone because it is ~0.5 s on a 60 s run.
+    """
     kwargs = _bind(space, value)
 
     def select(ctx, pert):
