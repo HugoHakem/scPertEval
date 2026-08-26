@@ -18,6 +18,7 @@ from conftest import make_cfg
 from scperteval.blocks.spaces import OPS, SPACES
 from scperteval.blocks.spaces.catalog import full, heg, hvg, perturbed_genes
 from scperteval.blocks.spaces.helpers import targeted_genes
+from scperteval.caching import cached
 from scperteval.calibrators import CALIBRATORS
 from scperteval.context import Context
 from scperteval.dataset import Dataset
@@ -309,3 +310,33 @@ def test_a_rule_of_the_wrong_shape_is_rejected_at_registration(rule):
     """`pert` comes first when present; anything else would be silently mis-classified."""
     with pytest.raises(TypeError, match="does not match a space rule's shape"):
         SPACES.subset("badshape", default=1, description="…")(rule)
+
+
+def test_a_name_cannot_be_redefined():
+    """Silently replacing a definition would leave instances scoring on genes it no longer describes."""
+    with pytest.raises(ValueError, match="already defined"):
+        SPACES.subset("heg", default=7, description="an impostor")(lambda ctx, k: None)
+    with pytest.raises(ValueError, match="already defined"):
+        SPACES.combine_subsets(OPS.union, SPACES.instance("heg", 3), SPACES.instance("perturbed_genes"), name="heg")
+
+
+@pytest.mark.parametrize("names", [(), ("heg_3",)])
+def test_combine_subsets_needs_at_least_two_spaces(names):
+    """One operand is an alias, not a combination; zero used to fail deep in the scoring loop."""
+    with pytest.raises(ValueError, match="at least two"):
+        SPACES.combine_subsets(OPS.union, *names, name="too_few")
+
+
+def test_combine_subsets_rejects_an_operator_that_is_not_a_set_operation():
+    with pytest.raises(ValueError, match="unknown op"):
+        SPACES.combine_subsets(np.add, SPACES.instance("heg", 3), SPACES.instance("hvg", 4), name="bad_op")
+
+
+def test_a_cached_helper_cannot_be_registered_as_a_space():
+    """`@cached` belongs on the helper a rule calls, not stacked on the rule itself."""
+    with pytest.raises(TypeError, match=r"must start with \(ctx"):
+
+        @SPACES.subset("stacked", default=3, description="…")
+        @cached
+        def stacked(scope, k):
+            return np.arange(k)

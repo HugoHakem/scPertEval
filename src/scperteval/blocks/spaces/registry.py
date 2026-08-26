@@ -63,6 +63,13 @@ def _signature_of(rule: Callable, lead: int) -> tuple[bool, str | None]:
     register as dataset-wide and score every perturbation on one panel, silently.
     """
     params = [p.name for p in inspect.signature(rule).parameters.values()]
+    expected_lead = ["ctx"] if lead == 1 else ["X", "ctx"]
+    if params[:lead] != expected_lead:
+        raise TypeError(
+            f"rule {rule.__name__}({', '.join(params)}) must start with "
+            f"({', '.join(expected_lead)}, …). A `@cached` helper decorated as a space will look "
+            f"like this: `@cached` belongs on the helper the rule calls, not on the rule."
+        )
     tail = params[lead:]
     takes_pert = bool(tail) and tail[0] == "pert"
     rest = tail[1:] if takes_pert else tail
@@ -179,6 +186,12 @@ class SpaceRegistry(Registry):
         return deco
 
     def _define(self, space: Space) -> None:
+        if space.name in self._catalog:
+            raise ValueError(
+                f"{self.kind} {space.name!r} is already defined. Names are unique: redefining one "
+                f"would leave instances already registered from the old definition in place, "
+                f"scoring on genes the catalog no longer describes."
+            )
         if (space.parameter is None) != (space.default is None):
             raise TypeError(
                 f"{self.kind} {space.name!r}: a rule taking a parameter needs a default and one "
@@ -232,6 +245,10 @@ class SpaceRegistry(Registry):
 
             SPACES.combine_subsets(OPS.union, "hvg_8192", "perturbed_genes", name="perturbed_and_hvgs")
         """
+        if len(names) < 2:
+            raise ValueError(f"combine_subsets needs at least two spaces to combine, got {len(names)}")
+        if op not in _OP_NAMES:
+            raise ValueError(f"unknown op {op!r}; expected one of OPS: {sorted(_OP_NAMES.values())}")
         unknown = [n for n in names if n not in self]
         if unknown:
             raise KeyError(f"unknown {self.kind}(s) {unknown}; available: {self.names()}")
