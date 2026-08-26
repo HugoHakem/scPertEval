@@ -41,12 +41,17 @@ class SetOps:
 
 
 OPS = SetOps()
+
+_OP_NAMES = {OPS.union: "union", OPS.intersection: "intersection", OPS.difference: "difference"}
 """The set operations available to :func:`combine_subsets` — ``OPS.union``, ``OPS.intersection``,
 ``OPS.difference``."""
 
 
-def combine_subsets(ctx, op: Callable, *selections):
+def _fold_selections(ctx, op: Callable, *selections):
     """Fold gene selections together with a set operation from ``OPS``.
+
+    The primitive behind :meth:`SpaceRegistry.combine_subsets`; compose spaces through that
+    instead, so ``per_pert`` is derived from the operands rather than declared.
 
     A composed space is an ordinary subset rule that calls the rules it composes and folds their
     selections here, so it nests to any depth — a fold can take the result of another fold.
@@ -82,18 +87,26 @@ def combine_subsets(ctx, op: Callable, *selections):
     return result
 
 
-def _parameter_of(rule: Callable, lead: int) -> str | None:
-    """The rule's parameter name, or ``None`` if it takes none.
+def _signature_of(rule: Callable, lead: int) -> tuple[bool, str | None]:
+    """What a rule asks for: whether it wants ``pert``, and its parameter's name.
 
-    ``lead`` counts the fixed leading arguments — 2 for a selection rule ``(ctx, pert, …)``, 3 for
-    a transform ``(X, ctx, pert, …)``. A trailing argument with a default means "no parameter", so
-    ``full(ctx, pert, value=None)`` is unparameterised while ``heg(ctx, pert, k)`` takes ``k``.
+    Both are read off the signature so neither can be declared wrong. ``lead`` counts the fixed
+    leading arguments — 1 for a selection rule ``(ctx, …)``, 2 for a transform ``(X, ctx, …)``.
+
+    Naming a parameter ``pert`` is how a rule asks for the perturbation, and *is* the declaration
+    that it varies by perturbation. A rule that doesn't name it is never passed one, so reaching
+    for it is a ``NameError`` rather than a silently stale panel. A trailing argument with a
+    default means the space takes no parameter::
+
+        heg(ctx, k)            -> (False, "k")      dataset-wide, takes k
+        top(ctx, pert, k)      -> (True,  "k")      per-perturbation, takes k
+        full(ctx, value=None)  -> (False, None)     dataset-wide, no parameter
     """
     params = list(inspect.signature(rule).parameters.values())
-    if len(params) <= lead:
-        return None
-    tail = params[lead]
-    return None if tail.default is not inspect.Parameter.empty else tail.name
+    takes_pert = len(params) > lead and params[lead].name == "pert"
+    tail = params[lead + takes_pert :]
+    parameter = tail[0].name if tail and tail[0].default is inspect.Parameter.empty else None
+    return takes_pert, parameter
 
 
 @dataclass(frozen=True)
@@ -102,7 +115,8 @@ class Space:
 
     #: Catalog name (``"heg"``). Instances are ``"<name>_<value>"``, or ``"<name>"`` unparameterised.
     name: str
-    #: The rule: ``(ctx, pert, value)`` for a subset, ``(X, ctx, pert, value)`` for a transform.
+    #: The rule: ``(ctx, …)`` for a subset, ``(X, ctx, …)`` for a transform. Called by keyword,
+    #: so parameter order never matters.
     rule: Callable
     #: The rule's parameter name (``"k"``), read from its signature; ``None`` if it takes none.
     parameter: str | None
@@ -110,7 +124,11 @@ class Space:
     default: Any
     #: Human-readable, with ``{v}`` standing in for the parameter.
     description: str
-    #: Whether the selection depends on which perturbation is scored (subsets only).
+    #: Whether the rule is passed ``pert`` — it named the argument, so it must be given one.
+    takes_pert: bool = False
+    #: Whether the selection actually varies by perturbation, which decides whether the reference
+    #: projection can be computed once and shared. Derived, never declared: from the signature for
+    #: a decorated rule, from the operands for a composed one.
     per_pert: bool = False
     #: ``False`` for a space that replaces the gene axis rather than narrowing it.
     is_subset: bool = True
@@ -145,13 +163,18 @@ class SpaceRegistry(Registry):
 
     # -- defining ------------------------------------------------------------------
 
-    def subset(self, name: str, *, default=None, description="", per_pert=False) -> Callable:
+    def subset(self, name: str, *, default=None, description="") -> Callable:
         """Decorator: define a space that keeps a subset of the genes.
 
-        The rule is ``(ctx, pert, value) -> column selection into the full gene axis`` — an
-        integer array, or a slice. Give the trailing argument a default to declare that the space
-        takes no parameter. Subsets can be folded together with
-        ``combine_subsets``.
+        The rule returns a column selection into the full gene axis — an integer array, or a
+        slice. Name a parameter ``pert`` to be given the perturbation, which is also how the space
+        declares that its genes vary by perturbation; omit it and the space is dataset-wide. Give
+        the trailing argument a default to declare that the space takes no parameter. Arguments
+        are passed by keyword, so their order doesn't matter::
+
+            def heg(ctx, k): ...  # dataset-wide, takes k
+            def top(ctx, pert, k): ...  # per-perturbation, takes k
+            def full(ctx, value=None): ...  # dataset-wide, no parameter
 
         Parameters
         ----------
@@ -162,13 +185,11 @@ class SpaceRegistry(Registry):
             parameter, and must be omitted if it doesn't.
         description : str
             Shown by ``scperteval list spaces``; ``{v}`` stands in for the parameter.
-        per_pert : bool
-            ``True`` if the selection depends on which perturbation is being scored, so it can't
-            be computed once and shared.
         """
 
         def deco(rule: Callable) -> Callable:
-            self._define(Space(name, rule, _parameter_of(rule, 2), default, description, per_pert))
+            takes_pert, parameter = _signature_of(rule, 1)
+            self._define(Space(name, rule, parameter, default, description, takes_pert, takes_pert))
             return rule
 
         return deco
@@ -184,7 +205,8 @@ class SpaceRegistry(Registry):
         """
 
         def deco(rule: Callable) -> Callable:
-            self._define(Space(name, rule, _parameter_of(rule, 3), default, description, False, False, precompute))
+            takes_pert, parameter = _signature_of(rule, 2)
+            self._define(Space(name, rule, parameter, default, description, takes_pert, takes_pert, False, precompute))
             return rule
 
         return deco
@@ -202,6 +224,62 @@ class SpaceRegistry(Registry):
         return [self._catalog[n] for n in sorted(self._catalog)]
 
     # -- instantiating -------------------------------------------------------------
+
+    def combine_subsets(self, op: Callable, *names: str, name: str, description: str | None = None) -> str:
+        """Register the union, intersection, or difference of already-registered subset spaces.
+
+        ``per_pert`` is derived from the operands — the result varies by perturbation if any
+        operand does — so a composed space cannot claim to be dataset-wide while computing
+        something that isn't. That mistake is invisible at runtime: the reference projection would
+        be built once from one perturbation's genes and reused for all of them, producing
+        plausible scores that are simply wrong.
+
+        Parameters
+        ----------
+        op : Callable
+            One of ``OPS`` — ``OPS.union``, ``OPS.intersection``, or ``OPS.difference``,
+            applied left to right, so ``OPS.difference`` subtracts the rest from the first.
+        *names : str
+            Two or more registered gene-subset instance names (e.g. ``"hvg_8192"``), in the order
+            ``op`` should apply them. A transform (``"pca_50"``) has no genes and is rejected.
+        name : str
+            What to register the result under. Required rather than derived: joining operator
+            symbols made ``(a-b)+c`` and ``a-(b+c)`` collide, and silently aliasing onto whichever
+            registered first is worse than asking.
+        description : str, optional
+            Shown by ``scperteval list spaces``. Defaults to naming the operation and operands.
+
+        Returns
+        -------
+        str
+            ``name``, for symmetry with :meth:`instance`.
+
+        Notes
+        -----
+        The operands' selections are read once, here; re-registering an operand afterwards does
+        not change an already-composed space.
+
+        Examples
+        --------
+        The HVG ∪ perturbed-genes panel of :cite:t:`Miller_2025`::
+
+            SPACES.combine_subsets(OPS.union, "hvg_8192", "perturbed_genes", name="perturbed_and_hvgs")
+        """
+        unknown = [n for n in names if n not in self]
+        if unknown:
+            raise KeyError(f"unknown {self.kind}(s) {unknown}; available: {self.names()}")
+        not_subsets = [n for n in names if "select" not in self.meta(n)]
+        if not_subsets:
+            raise ValueError(f"not gene subsets, so they have no genes to combine: {not_subsets}")
+        selects = [self.meta(n)["select"] for n in names]
+        per_pert = any(not self.meta(n)["global_space"] for n in names)
+
+        def rule(ctx, pert, value=None):
+            return _fold_selections(ctx, op, *(select(ctx, pert) for select in selects))
+
+        label = _OP_NAMES.get(op, getattr(op, "__name__", "combination"))
+        self._define(Space(name, rule, None, None, description or f"{label} of {', '.join(names)}", True, per_pert))
+        return self.instance(name)
 
     def instance(self, name: str, value=None) -> str:
         """Register one variant of a defined space and return its name, e.g. ``"heg_250"``.
@@ -228,27 +306,41 @@ class SpaceRegistry(Registry):
             return key
         common = dict(description=space.describe(value), value=value)
         if space.is_subset:
-            select = _bind_select(space.rule, value)
+            select = _bound_select(space, value)
 
             def apply(X, ctx, pert):
                 return to_dense(X[:, select(ctx, pert)])
 
             self.add(key, apply, select=select, global_space=not space.per_pert, **common)
         else:
-            self.add(key, _bind_transform(space.rule, value), global_space=True, precompute=space.precompute, **common)
+            self.add(key, _bound_transform(space, value), global_space=True, precompute=space.precompute, **common)
         return key
 
 
-def _bind_select(rule, value):
+def _bind(space: Space, value):
+    """The rule's arguments after ``ctx``, by keyword, so their order never matters."""
+    kwargs = {}
+    if space.parameter is not None:
+        kwargs[space.parameter] = value
+    return kwargs
+
+
+def _bound_select(space: Space, value):
+    """``select(ctx, pert)`` for a subset rule, with its parameter bound."""
+    kwargs = _bind(space, value)
+
     def select(ctx, pert):
-        return rule(ctx, pert, value)
+        return space.rule(ctx, **({"pert": pert} if space.takes_pert else {}), **kwargs)
 
     return select
 
 
-def _bind_transform(rule, value):
+def _bound_transform(space: Space, value):
+    """``apply(X, ctx, pert)`` for a transform rule, with its parameter bound."""
+    kwargs = _bind(space, value)
+
     def apply(X, ctx, pert):
-        return rule(X, ctx, pert, value)
+        return space.rule(X, ctx, **({"pert": pert} if space.takes_pert else {}), **kwargs)
 
     return apply
 

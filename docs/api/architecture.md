@@ -32,7 +32,7 @@ Three registries, keyed by name and looked up through the `Context`:
   (`full`, `top_<k>`, `degs_<padj>`, `heg_<k>`, `hvg_<k>`, `perturbed_genes`,
   `perturbed_and_hvgs`) and one transform, `pca_<k>`. Definitions become registered instances via
   {meth}`~scperteval.blocks.spaces.SpaceRegistry.instance`; subsets fold together with
-  {func}`~scperteval.blocks.spaces.combine_subsets`.
+  {meth}`~scperteval.blocks.spaces.SpaceRegistry.combine_subsets`.
 - **DE backends** ({obj}`~scperteval.blocks.de.DE_METHODS`) — differential-expression
   methods sharing one {class}`~scperteval.types.PerturbationDEResult` interface: `t-test`
   ({func}`~scperteval.blocks.de.de_ttest`, default, moment-based),

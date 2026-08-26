@@ -27,11 +27,20 @@ folded together. It receives `(ctx, pert, value)`. The rule runs once per pertur
 protocol, so anything computed over the whole dataset belongs behind a `Context` cache (as
 `ctx.control_mean()` is), not recomputed here.
 
+**Name a parameter `pert` to be given the perturbation.** That is also how a space says its
+genes vary by perturbation, so scPertEval knows it can't compute the selection once and share it:
+
+```python
+def heg(ctx, k): ...             # dataset-wide
+def top(ctx, pert, k): ...       # per-perturbation
+```
+
+There is no flag to set. A rule that doesn't name `pert` is never passed one, so reaching for it
+raises `NameError` rather than silently scoring every perturbation on one panel. Arguments are
+passed by keyword, so their order doesn't matter.
+
 **The decorator** carries the metadata. `default` is the parameter value used when a caller
-doesn't supply one; `{v}` in the description is filled in with it. Pass `per_pert=True` when the
-selection depends on which perturbation is being scored — including when the rule folds in a
-per-perturbation rule such as `top` or `degs` — so scPertEval knows it can't compute the
-selection once and share it.
+doesn't supply one; `{v}` in the description is filled in with it.
 
 **Whether a space takes a parameter is read from the rule's signature.** A trailing argument
 with a default means it takes none:
@@ -63,19 +72,23 @@ depend on per-call options like `--de-method`, which the cache would outlive.
 
 ### Composing subsets
 
-A composed space is a rule that calls other rules. `combine_subsets` folds their selections
-with a set operation from `OPS`, and nests to any depth:
+`SPACES.combine_subsets` builds a new space from registered ones with a set operation from `OPS`
+(`OPS.union`, `OPS.intersection`, `OPS.difference`, the last subtracting left to right):
 
 ```python
-@SPACES.subset("perturbed_and_hvgs", description="HVG union perturbed genes — a panel introduced in Miller et al. 2025")
-def perturbed_and_hvgs(ctx, pert, value=None):
-    return combine_subsets(ctx, OPS.union, hvg(ctx, pert, 8192), perturbed_genes(ctx, pert))
+SPACES.combine_subsets(
+    OPS.union, SPACES.instance("hvg", 8192), SPACES.instance("perturbed_genes"),
+    name="perturbed_and_hvgs", description="HVG union perturbed genes",
+)
 ```
 
-`OPS` carries the three set operations — `OPS.union`, `OPS.intersection`, and
-`OPS.difference`, which subtracts left to right. So
-`combine_subsets(ctx, OPS.difference, full(ctx, pert), hvg(ctx, pert, 2000))` is the
-complement of the HVG panel.
+The result is a space like any other: it appears in `scperteval list spaces`, resolves by name,
+and can itself be composed. `name` is required rather than derived, because operator-symbol names
+made `(a-b)+c` and `a-(b+c)` collide.
+
+Whether the composite varies by perturbation is **derived from its operands** — union in a
+per-perturbation space such as `top_50` and the result is per-perturbation too. Nothing to
+declare, so nothing to get wrong.
 
 ### Spaces that aren't gene subsets
 

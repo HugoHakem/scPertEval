@@ -15,9 +15,10 @@ import numpy as np
 import pytest
 from conftest import make_cfg
 
-from scperteval.blocks.spaces import OPS, SPACES, combine_subsets
-from scperteval.blocks.spaces.catalog import full, heg, hvg, perturbed_and_hvgs, perturbed_genes
+from scperteval.blocks.spaces import OPS, SPACES
+from scperteval.blocks.spaces.catalog import full, heg, hvg, perturbed_genes
 from scperteval.blocks.spaces.helpers import targeted_genes
+from scperteval.blocks.spaces.registry import _fold_selections
 from scperteval.calibrators import CALIBRATORS
 from scperteval.context import Context
 from scperteval.dataset import Dataset
@@ -40,7 +41,7 @@ def test_heg_picks_highest_control_expression_genes():
     ctx = Context(Dataset(adata, cfg), cfg)
     # the 3 highest control-expressed genes are g3 (9.0), g6 (8.0), g8 (7.0), in that order
     assert list(np.argsort(-ctrl_means)[:3]) == [3, 6, 8]
-    assert heg(ctx, "pertA", 3).tolist() == [3, 6, 8]
+    assert heg(ctx, 3).tolist() == [3, 6, 8]
 
 
 def test_hvg_picks_highest_dispersion_genes():
@@ -69,7 +70,7 @@ def test_hvg_picks_highest_dispersion_genes():
 
     cfg = make_cfg(min_cells=10)
     ctx = Context(Dataset(adata, cfg), cfg)
-    assert set(hvg(ctx, "pertA", n_top).tolist()) == overdispersed
+    assert set(hvg(ctx, n_top).tolist()) == overdispersed
 
 
 def test_perturbed_gene_indices_matches_var_names_and_skips_non_gene_labels():
@@ -126,39 +127,66 @@ def _ctx_10_genes():
 )
 def test_combine_subsets_applies_the_set_operation(op, expected):
     ctx = _ctx_10_genes()
-    got = combine_subsets(ctx, op, heg(ctx, "g5", 3), perturbed_genes(ctx, "g5"))
+    got = _fold_selections(ctx, op, heg(ctx, 3), perturbed_genes(ctx))
     assert got.tolist() == expected
 
 
 def test_combine_subsets_canonicalises_a_slice_so_full_composes_as_a_complement():
     """full returns a slice; combining must still yield integer positions."""
     ctx = _ctx_10_genes()
-    complement = combine_subsets(ctx, OPS.difference, full(ctx, "g5"), heg(ctx, "g5", 3))
+    complement = _fold_selections(ctx, OPS.difference, full(ctx), heg(ctx, 3))
     assert complement.tolist() == [0, 1, 2, 4, 5, 7, 9]  # 10 genes minus {3, 6, 8}
 
 
 def test_combine_subsets_nests_to_any_depth():
-    """A composed selection is just a selection, so it folds into another one."""
+    """A composition is itself a subset, so it can be composed again."""
     ctx = _ctx_10_genes()
-    inner = combine_subsets(ctx, OPS.difference, heg(ctx, "g5", 3), perturbed_genes(ctx, "g5"))
-    outer = combine_subsets(ctx, OPS.union, inner, hvg(ctx, "g5", 4))
-    assert set(outer.tolist()) == {6, 8} | set(hvg(ctx, "g5", 4).tolist())
-
-    # the other grouping is a different set, and each is written explicitly
-    other = combine_subsets(
-        ctx,
-        np.setdiff1d,
-        heg(ctx, "g5", 3),
-        combine_subsets(ctx, OPS.union, perturbed_genes(ctx, "g5"), hvg(ctx, "g5", 4)),
+    inner = SPACES.combine_subsets(
+        OPS.difference, SPACES.instance("heg", 3), SPACES.instance("perturbed_genes"), name="heg3_not_pert"
     )
-    assert other.tolist() != outer.tolist()
+    outer = SPACES.combine_subsets(OPS.union, inner, SPACES.instance("hvg", 4), name="nested")
+
+    got = SPACES.meta(outer)["select"](ctx, "g5")
+    assert set(got.tolist()) == {6, 8} | set(hvg(ctx, 4).tolist())
+
+
+def test_combine_subsets_derives_per_pert_from_its_operands():
+    """The composite varies by perturbation exactly when one of its operands does."""
+    both_global = SPACES.combine_subsets(
+        OPS.union, SPACES.instance("heg", 3), SPACES.instance("perturbed_genes"), name="global_pair"
+    )
+    with_per_pert = SPACES.combine_subsets(
+        OPS.union, SPACES.instance("heg", 3), SPACES.instance("top", 5), name="mixed_pair"
+    )
+    assert SPACES.meta(both_global)["global_space"] is True  # nothing varies -> project once
+    assert SPACES.meta(with_per_pert)["global_space"] is False  # top_5 varies -> re-project
+
+
+def test_combine_subsets_rejects_transforms_and_unknown_names():
+    with pytest.raises(ValueError, match="no genes to combine"):
+        SPACES.combine_subsets(OPS.union, SPACES.instance("pca"), SPACES.instance("heg", 3), name="with_pca")
+    with pytest.raises(KeyError, match="unknown space"):
+        SPACES.combine_subsets(OPS.union, "heg_99999", SPACES.instance("heg", 3), name="with_typo")
+
+
+def test_a_rule_that_does_not_name_pert_is_never_given_one():
+    """Not naming ``pert`` is how a space declares it is dataset-wide -- and makes it unreachable."""
+
+    @SPACES.subset("no_pert", default=3, description="ignores the perturbation")
+    def no_pert(ctx, k):
+        return np.arange(k)
+
+    assert SPACES.catalog and not next(s for s in SPACES.catalog() if s.name == "no_pert").per_pert
+    ctx = _ctx_10_genes()
+    # the rule is called without pert, so a body reaching for it would raise NameError, not
+    # silently receive a stale one
+    assert SPACES.meta(SPACES.instance("no_pert"))["select"](ctx, "g5").tolist() == [0, 1, 2]
 
 
 def test_perturbed_and_hvgs_unions_hvg_with_the_targeted_genes():
     ctx = _ctx_10_genes()  # 10 genes, so hvg(8192) degrades to all of them
-    assert set(perturbed_and_hvgs(ctx, "g5").tolist()) == set(hvg(ctx, "g5", 8192).tolist()) | set(
-        perturbed_genes(ctx, "g5").tolist()
-    )
+    got = SPACES.meta("perturbed_and_hvgs")["select"](ctx, "g5")
+    assert set(got.tolist()) == set(hvg(ctx, 8192).tolist()) | set(perturbed_genes(ctx).tolist())
 
 
 def test_catalog_lists_definitions_and_says_what_each_takes():
@@ -195,7 +223,7 @@ def test_a_rule_taking_a_parameter_must_declare_a_default():
 
 def test_full_is_a_view_not_a_copy():
     ctx = _ctx_10_genes()
-    assert full(ctx, "g5") == slice(None)
+    assert full(ctx) == slice(None)
     cells = ctx.ds.cells("g5")
     assert SPACES["full"](cells, ctx, "g5").shape == cells.shape
 

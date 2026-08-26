@@ -56,7 +56,6 @@ DE backends, feature spaces, control sources, and calibrators.
     SPACES
     SpaceRegistry
     Space
-    combine_subsets
 ```
 
 ## DE backends
