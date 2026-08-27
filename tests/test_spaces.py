@@ -216,6 +216,16 @@ def test_instance_registers_on_demand_and_guards_its_value():
         SPACES.instance("degs", 0.05000000001)
 
 
+def test_instance_is_thread_safe_for_a_not_yet_registered_value():
+    """Many threads racing to register the same brand-new value must all agree on the outcome."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        keys = list(ex.map(lambda _: SPACES.instance("heg", 4321), range(20)))
+    assert keys == ["heg_4321"] * 20
+    assert SPACES.meta("heg_4321")["value"] == 4321
+
+
 def test_a_rule_taking_a_parameter_must_declare_a_default():
     with pytest.raises(TypeError, match="needs a default"):
 

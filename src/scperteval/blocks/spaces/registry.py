@@ -14,6 +14,7 @@ Two levels:
 from __future__ import annotations
 
 import inspect
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -134,6 +135,9 @@ class SpaceRegistry(Registry):
     def __init__(self, kind: str):
         super().__init__(kind)
         self._catalog: dict[str, Space] = {}
+        # Definitions are only ever added at import time (single-threaded); instance() is the one
+        # place this registry is mutated at runtime, so it's the one place that needs a lock.
+        self._lock = threading.Lock()
 
     # -- defining ------------------------------------------------------------------
 
@@ -290,7 +294,8 @@ class SpaceRegistry(Registry):
         """Register one variant of a defined space and return its name, e.g. ``"heg_250"``.
 
         Idempotent: a variant already registered at the same value is reused. Omit ``value`` for
-        the space's default.
+        the space's default. Thread-safe: two concurrent calls registering the same not-yet-seen
+        value each build it at most once, guarded by a lock scoped to this registry alone.
         """
         if name not in self._catalog:
             raise KeyError(f"unknown {self.kind} {name!r}; available: {sorted(self._catalog)}")
@@ -308,36 +313,44 @@ class SpaceRegistry(Registry):
                     f"strongest genes, degs would select none, pca would truncate its components."
                 )
             key = f"{name}_{value:g}"
-        if key in self:
+
+        def guard_existing():
             # Distinct values can format to the same name (0.05 and 0.05000001 are both "0.05").
             # Registering the second silently under the first's rule would score the wrong genes.
             registered = self.meta(key).get("value")
             if registered != value:
                 raise ValueError(f"{key!r} is already registered with value {registered!r}, not {value!r}")
+
+        if key in self:
+            guard_existing()
             return key
-        common = dict(description=space.describe(value), value=value)
-        if space.is_subset:
-            select = _bound_select(space, value)
+        with self._lock:
+            if key in self:  # another thread may have registered it while this one waited for the lock
+                guard_existing()
+                return key
+            common = dict(description=space.describe(value), value=value)
+            if space.is_subset:
+                select = _bound_select(space, value)
 
-            def apply(X, ctx, pert):
-                keep = select(ctx, pert)
-                if isinstance(keep, np.ndarray) and keep.size == 0:
-                    raise ValueError(
-                        f"space {key!r} selected no genes for {pert!r}. Every metric would return "
-                        f"nan rather than fail, so this is refused: widen the space, or check that "
-                        f"its criterion matches the dataset."
-                    )
-                return to_dense(X[:, keep])
+                def apply(X, ctx, pert):
+                    keep = select(ctx, pert)
+                    if isinstance(keep, np.ndarray) and keep.size == 0:
+                        raise ValueError(
+                            f"space {key!r} selected no genes for {pert!r}. Every metric would return "
+                            f"nan rather than fail, so this is refused: widen the space, or check that "
+                            f"its criterion matches the dataset."
+                        )
+                    return to_dense(X[:, keep])
 
-            super().add(key, apply, select=select, global_space=not space.per_pert, **common)
-        else:
-            super().add(
-                key,
-                _bound_transform(space, value),
-                global_space=not space.per_pert,
-                precompute=space.precompute,
-                **common,
-            )
+                super().add(key, apply, select=select, global_space=not space.per_pert, **common)
+            else:
+                super().add(
+                    key,
+                    _bound_transform(space, value),
+                    global_space=not space.per_pert,
+                    precompute=space.precompute,
+                    **common,
+                )
         return key
 
 
