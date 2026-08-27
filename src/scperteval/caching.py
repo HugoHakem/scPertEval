@@ -4,6 +4,12 @@ Anything computed over the whole dataset -- a per-gene statistic, a fitted basis
 computed once and reused, whichever building block needs it: a space rule, a centering source, a
 metric. :func:`cached` does that: decorate the computation, and it is evaluated once per prepared
 dataset and stored on the handle's shared :class:`~scperteval.context.CacheStore`.
+
+Every dataset-level cache in this codebase, including :class:`~scperteval.context.Context`'s own
+all-perturbed reference sample, goes through the one locking primitive here (:func:`_once`) --
+``@cached`` is the common case, restricted to :class:`DatasetScope` so a value can't accidentally
+depend on per-call options; call :func:`_once` directly for the rarer computation that needs more
+of ``ctx`` than that.
 """
 
 from __future__ import annotations
@@ -40,6 +46,29 @@ class DatasetScope:
     subsample: int
 
 
+def _once(store: Any, key: Any, compute: Callable[[], Any]) -> Any:
+    """Compute ``compute()`` once per ``key`` and reuse it, thread-safely.
+
+    The double-checked-locking primitive :func:`cached` builds on. Call this directly, instead
+    of ``@cached``, for a computation that needs more of ``ctx`` than :class:`DatasetScope`
+    exposes — :meth:`~scperteval.context.Context.reference` and its two derivatives are the only
+    callers today, since they build a value by calling back into space application, which needs
+    the full ``Context``. One primitive either way, so the locking only has to be got right once.
+
+    ``key`` shares ``CacheStore.memo`` with every ``@cached`` computation, whose keys are always
+    ``(function, params)``. Match that shape here too — e.g. ``("reference", ())`` — so anything
+    reading the store's keys generically (as a debugger or a test might) sees one consistent shape.
+    """
+    value = store.memo.get(key, _MISSING)
+    if value is _MISSING:
+        with store.lock:  # re-check under the lock: another thread may have filled it
+            value = store.memo.get(key, _MISSING)
+            if value is _MISSING:
+                value = compute()
+                store.memo[key] = value
+    return value
+
+
 def cached(fn: Callable) -> Callable:
     """Compute a dataset-level value once per prepared dataset and reuse it.
 
@@ -62,14 +91,6 @@ def cached(fn: Callable) -> Callable:
 
     @wraps(fn)
     def call(ctx: Context, *params: Any) -> Any:
-        key, store = (fn, params), ctx._store
-        value = store.memo.get(key, _MISSING)
-        if value is _MISSING:
-            with store.lock:  # re-check under the lock: another thread may have filled it
-                value = store.memo.get(key, _MISSING)
-                if value is _MISSING:
-                    value = fn(ctx.scope(), *params)
-                    store.memo[key] = value
-        return value
+        return _once(ctx._store, (fn, params), lambda: fn(ctx.scope(), *params))
 
     return call

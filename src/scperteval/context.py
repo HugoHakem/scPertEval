@@ -15,7 +15,7 @@ import numpy as np
 
 from .blocks.de import DE_METHODS, _moments
 from .blocks.spaces import SPACES
-from .caching import DatasetScope, cached
+from .caching import DatasetScope, _once, cached
 from .dataset import Dataset, to_dense
 from .reference import Reference
 from .sources import SOURCES
@@ -39,18 +39,20 @@ class CacheStore:
         # call reference() while already holding this lock, which a plain Lock would
         # self-deadlock on.
         self.lock = threading.RLock()
-        self.de_results: dict = {}
-        self.moments: dict = {}
-        self.memo: dict = {}  # (function, params) -> value, for @cached dataset computations
+        self.memo: dict = {}  # (function, params) -> value, for every @cached/_once computation
         self.scope: DatasetScope | None = None  # the settings every value here was computed under
-        self.reference: Reference | None = None
-        self.reference_projections: dict = {}
-        self.reference_sums: tuple | None = None
 
 
 @cached
 def _control_mean(scope: DatasetScope) -> np.ndarray:
     return scope.ds.control_mean()
+
+
+@cached
+def _reference(scope: DatasetScope) -> Reference:
+    idx = scope.ds.all_perturbed_indices(scope.subsample)
+    cells = to_dense(scope.ds.adata.X[idx]).astype(np.float64)
+    return Reference(cells, scope.ds.pert[idx])
 
 
 class Context:
@@ -88,10 +90,6 @@ class Context:
         self._user_sources = user_sources or {}
         self._local = threading.local()
         self._store = store if store is not None else CacheStore()
-
-    @property
-    def _init_lock(self):
-        return self._store.lock
 
     @property
     def perturbations(self):
@@ -205,20 +203,19 @@ class Context:
         different predictions without cross-call contamination.
         """
         method = self.cfg.de_method
-        cacheable = self._cacheable(source) and self._cacheable(reference)
+
+        def compute():
+            # A method may declare a `from_moments` capability (see DE_METHODS); if it does,
+            # dispatch through the shared moment cache instead of recomputing from cells.
+            from_moments = DE_METHODS.meta(method).get("from_moments")
+            if from_moments is not None:
+                return from_moments(*self._moments(source, pert), *self._moments(reference, pert))
+            return DE_METHODS[method](self._de_cells(source, pert), self._de_cells(reference, pert))
+
+        if not (self._cacheable(source) and self._cacheable(reference)):
+            return compute()
         key = (self._moment_key(source, pert), self._moment_key(reference, pert), method)
-        if cacheable and key in self._store.de_results:
-            return self._store.de_results[key]
-        # A method may declare a `from_moments` capability (see DE_METHODS); if it does,
-        # dispatch through the shared moment cache instead of recomputing from cells.
-        from_moments = DE_METHODS.meta(method).get("from_moments")
-        if from_moments is not None:
-            result = from_moments(*self._moments(source, pert), *self._moments(reference, pert))
-        else:
-            result = DE_METHODS[method](self._de_cells(source, pert), self._de_cells(reference, pert))
-        if cacheable:
-            self._store.de_results[key] = result
-        return result
+        return _once(self._store, ("de", key), compute)
 
     def _moments(self, source, pert):
         if source == "all_perturbed":
@@ -226,9 +223,7 @@ class Context:
         if not self._cacheable(source):  # per-call source (e.g. prediction) — compute fresh, don't cache
             return _moments(self._de_cells(source, pert))
         key = self._moment_key(source, pert)
-        if key not in self._store.moments:
-            self._store.moments[key] = _moments(self._de_cells(source, pert))
-        return self._store.moments[key]
+        return _once(self._store, ("moments", key), lambda: _moments(self._de_cells(source, pert)))
 
     def _cacheable(self, source):
         """Whether a source's cells are dataset-derived (shareable) rather than per-call (predictions/user sources)."""
@@ -252,13 +247,7 @@ class Context:
 
         Each cell's perturbation is recorded so the sample can be served leave-one-out.
         """
-        if self._store.reference is None:
-            with self._init_lock:
-                if self._store.reference is None:
-                    idx = self.ds.all_perturbed_indices(self.cfg.subsample)
-                    cells = to_dense(self.ds.adata.X[idx]).astype(np.float64)
-                    self._store.reference = Reference(cells, self.ds.pert[idx])
-        return self._store.reference
+        return _reference(self)
 
     def _reference_population(self, space, pert):
         """The reference in a feature space with the target perturbation removed.
@@ -275,11 +264,9 @@ class Context:
 
     def reference_projection(self, space):
         """The reference projected to a perturbation-independent space, cached once."""
-        if space not in self._store.reference_projections:
-            with self._init_lock:
-                if space not in self._store.reference_projections:
-                    self._store.reference_projections[space] = SPACES[space](self.reference().cells, self, None)
-        return self._store.reference_projections[space]
+        return _once(
+            self._store, ("reference_projection", (space,)), lambda: SPACES[space](self.reference().cells, self, None)
+        )
 
     def _ensure_reference_sums(self):
         """Cache the reference's column sums and sums-of-squares once.
@@ -287,12 +274,12 @@ class Context:
         Leave-one-out moments are then an O(target cells) subtraction rather than a
         re-densify per perturbation.
         """
-        if self._store.reference_sums is None:
-            with self._init_lock:
-                if self._store.reference_sums is None:
-                    X = self.reference().cells
-                    self._store.reference_sums = (X.sum(0), np.einsum("ij,ij->j", X, X), len(X))
-        return self._store.reference_sums
+
+        def compute():
+            X = self.reference().cells
+            return (X.sum(0), np.einsum("ij,ij->j", X, X), len(X))
+
+        return _once(self._store, ("reference_sums", ()), compute)
 
     def _reference_moments(self, pert):
         total, totalsq, n = self._ensure_reference_sums()

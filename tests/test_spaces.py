@@ -259,7 +259,7 @@ def test_space_runs_end_to_end_through_the_runner(cfg_factory):
     ctx.predictions = PredictionSet(pred, ds, cfg)
 
     ctx.warm([proto])
-    assert panel in ctx._store.reference_projections  # global space: projected once, shared
+    assert ("reference_projection", (panel,)) in ctx._store.memo  # global space: projected once, shared
     agg, rows, _ = run_protocol(proto, ctx, CALIBRATORS["score"])
     assert len(rows) == 3
     assert np.isfinite(agg["mean"])
