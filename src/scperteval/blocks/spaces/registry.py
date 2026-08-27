@@ -21,6 +21,7 @@ from typing import Any
 
 import numpy as np
 
+from ...caching import _once
 from ...dataset import to_dense
 from ...registry import Registry
 
@@ -330,7 +331,7 @@ class SpaceRegistry(Registry):
                 return key
             common = dict(description=space.describe(value), value=value)
             if space.is_subset:
-                select = _bound_select(space, value)
+                select = _bound_select(space, value, key)
 
                 def apply(X, ctx, pert):
                     keep = select(ctx, pert)
@@ -362,18 +363,26 @@ def _bind(space: Space, value):
     return kwargs
 
 
-def _bound_select(space: Space, value):
+def _bound_select(space: Space, value, key: str):
     """``select(ctx, pert)`` for a subset rule, with its parameter bound.
 
     Runs the rule on every call -- once per perturbation per candidate per protocol. For a
-    dataset-wide space the answer is identical every time, so the ranking on top of the cached
-    statistic (an argsort over all genes, ~0.7 ms at 20k genes) is repeated needlessly. Caching it
-    here on ``not space.per_pert`` would fix that; left alone because it is ~0.5 s on a 60 s run.
+    dataset-wide space (``not space.per_pert``) the answer is identical every time by
+    construction (the rule never received ``pert``, so it cannot depend on it), so the ranking on
+    top of the cached statistic (an argsort over all genes, ~0.7 ms at 20k genes) is computed once
+    per prepared dataset and reused, the same way :func:`~scperteval.context.Context.reference`
+    already trusts a global space's result to be reusable across every perturbation.
     """
     kwargs = _bind(space, value)
 
-    def select(ctx, pert):
+    def call(ctx, pert):
         return space.rule(ctx, **({"pert": pert} if space.takes_pert else {}), **kwargs)
+
+    if space.per_pert:
+        return call
+
+    def select(ctx, pert):
+        return _once(ctx._store, ("select", key), lambda: call(ctx, pert))
 
     return select
 

@@ -226,6 +226,40 @@ def test_instance_is_thread_safe_for_a_not_yet_registered_value():
     assert SPACES.meta("heg_4321")["value"] == 4321
 
 
+def test_a_global_spaces_selection_runs_once_per_store_not_once_per_call():
+    """A per_pert=False space's rule must run once per prepared dataset (shared CacheStore),
+    reused across every fresh Context a verb call builds -- not once per (pert, source) call."""
+    calls = []
+
+    @SPACES.subset("test_count_calls", description="counts how many times its rule runs")
+    def test_count_calls(ctx):
+        calls.append(1)
+        return slice(None)
+
+    ctx1 = _ctx_10_genes()
+    ctx2 = Context(ctx1.ds, ctx1.cfg, store=ctx1._store)  # a second, fresh Context, same store
+    key = SPACES.instance("test_count_calls")
+    for ctx, pert in [(ctx1, "g3+g0"), (ctx1, "g5"), (ctx2, "g3+g0")]:
+        SPACES[key](ctx.ds.cells(pert), ctx, pert)
+    assert len(calls) == 1
+
+
+def test_a_per_perturbation_spaces_selection_still_runs_every_call():
+    """per_pert=True is untouched by that caching -- it must still see every call's pert."""
+    calls = []
+
+    @SPACES.subset("test_count_pert_calls", description="counts how many times its rule runs")
+    def test_count_pert_calls(ctx, pert):
+        calls.append(pert)
+        return slice(None)
+
+    ctx = _ctx_10_genes()
+    key = SPACES.instance("test_count_pert_calls")
+    for pert in ("g3+g0", "g5", "g3+g0"):
+        SPACES[key](ctx.ds.cells(pert), ctx, pert)
+    assert calls == ["g3+g0", "g5", "g3+g0"]  # every call, not deduplicated
+
+
 def test_a_rule_taking_a_parameter_must_declare_a_default():
     with pytest.raises(TypeError, match="needs a default"):
 
