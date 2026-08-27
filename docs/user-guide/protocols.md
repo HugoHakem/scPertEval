@@ -234,8 +234,9 @@ def my_mmd(gt, prediction, ctx):  # gt, prediction are (cells × genes)
 ```
 
 ```python
-Protocol("my_mmd_top50", M.my_mmd, representation="population", space=SPACES.instance("top", 50),
-         better="lower", perfect=0.0)
+Protocol(
+    "my_mmd_top50", M.my_mmd, representation="population", space=SPACES.instance("top", 50), better="lower", perfect=0.0
+)
 ```
 
 Switching `representation` to `population` does two things at once — the function now sees cells,

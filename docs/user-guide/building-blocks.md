@@ -31,10 +31,10 @@ protocol, so anything computed over the whole dataset belongs behind a `Context`
 genes vary by perturbation, so scPertEval knows it can't compute the selection once and share it:
 
 ```python
-def full(ctx): ...               # dataset-wide, no parameter
-def heg(ctx, k): ...             # dataset-wide, takes k
-def targets(ctx, pert): ...      # per-perturbation, no parameter
-def top(ctx, pert, k): ...       # per-perturbation, takes k
+def full(ctx): ...  # dataset-wide, no parameter
+def heg(ctx, k): ...  # dataset-wide, takes k
+def targets(ctx, pert): ...  # per-perturbation, no parameter
+def top(ctx, pert, k): ...  # per-perturbation, takes k
 ```
 
 There is no flag to set. A rule that doesn't name `pert` is never passed one, so reaching for it
@@ -79,8 +79,11 @@ depend on per-call options like `--de-method`, which the cache would outlive.
 
 ```python
 SPACES.combine_subsets(
-    OPS.union, SPACES.instance("hvg", 8192), SPACES.instance("perturbed_genes"),
-    name="perturbed_and_hvgs", description="HVG union perturbed genes",
+    OPS.union,
+    SPACES.instance("hvg", 8192),
+    SPACES.instance("perturbed_genes"),
+    name="perturbed_and_hvgs",
+    description="HVG union perturbed genes",
 )
 ```
 
