@@ -229,7 +229,7 @@ p < padj) for the space, and `overlap_k` to feed an integer straight to the metr
 function receives `(cells × genes)` matrices; pair it with the single-cell controls:
 
 ```python
-def my_mmd(gt, prediction, ctx):      # gt, prediction are (cells × genes)
+def my_mmd(gt, prediction, ctx):  # gt, prediction are (cells × genes)
     ...
 ```
 

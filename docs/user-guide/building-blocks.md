@@ -120,7 +120,7 @@ Register it with `@DE_METHODS.register` in [`src/scperteval/blocks/de.py`](https
 ```python
 @DE_METHODS.register("my_test", description="…")
 def de_my_test(target, reference):
-    statistic, pvalue = ...          # per-gene statistic and raw p-value
+    statistic, pvalue = ...  # per-gene statistic and raw p-value
     return PerturbationDEResult(statistic=statistic, pvalue=pvalue, pvalue_adj=bh(pvalue))
 ```
 
@@ -141,7 +141,7 @@ Register it with `@SOURCES.register` in [`src/scperteval/sources.py`](https://gi
 ```python
 @SOURCES.register("my_baseline", provides="centroid", description="…")
 def src_my_baseline(ctx, pert):
-    return ...                       # a 1-D centroid (or cells, if provides="cells")
+    return ...  # a 1-D centroid (or cells, if provides="cells")
 ```
 
 Use it as a control at the CLI via `--positive`/`--negative`, or make it a row's default with
@@ -157,8 +157,9 @@ cross-perturbation aggregate. Add a `Calibrator` to the `CALIBRATORS` dict in
 
 ```python
 CALIBRATORS["my_score"] = Calibrator(
-    "my_score", ("positive", "negative"),
-    per_pert=lambda raws, p: ...,          # raws["positive"], raws["negative"] -> one number
+    "my_score",
+    ("positive", "negative"),
+    per_pert=lambda raws, p: ...,  # raws["positive"], raws["negative"] -> one number
     aggregate=lambda v: {"my_score": float(np.nanmean(v))},
     description="…",
 )
