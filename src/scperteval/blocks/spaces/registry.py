@@ -297,6 +297,13 @@ class SpaceRegistry(Registry):
         Idempotent: a variant already registered at the same value is reused. Omit ``value`` for
         the space's default. Thread-safe: two concurrent calls registering the same not-yet-seen
         value each build it at most once, guarded by a lock scoped to this registry alone.
+
+        Registers the rule; nothing is computed until the space is applied, and that computation
+        is cached (see :func:`~scperteval.caching.cached`). Call this at import time — from a
+        module body, next to the protocol row or composition that needs the space — as the
+        built-ins and the guides do. A run itself never registers from a worker: protocols
+        resolve and :meth:`~scperteval.context.Context.warm` completes before the scoring pool
+        opens, after which workers only read.
         """
         if name not in self._catalog:
             raise KeyError(f"unknown {self.kind} {name!r}; available: {sorted(self._catalog)}")
