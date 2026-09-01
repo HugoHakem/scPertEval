@@ -43,9 +43,8 @@ _DE: dict[str, Any] = dict(
 )
 # rank retrieval is dataset-scope: the constant global mean is its correct chance-level baseline.
 _RANK: dict[str, Any] = dict(group="pseudobulk", default_negative="global_mean", better="lower", perfect=0.0)
-# nir is 1 - transpose_rank (higher is better), same negative deviation as _RANK but Protocol's
-# better="higher"/perfect=1.0 defaults already fit, so nothing else to override.
-_NIR: dict[str, Any] = dict(group="pseudobulk", default_negative="global_mean")
+# nir is 1 - transpose_rank, hence the inverted direction.
+_NIR: dict[str, Any] = dict(group="pseudobulk", default_negative="global_mean", better="higher", perfect=1.0)
 
 
 TABLE = [
