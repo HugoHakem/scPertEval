@@ -144,7 +144,12 @@ def r2(gt, prediction, ctx):
 
     Unlike :func:`pearson`, this penalises bias and scale errors, not just linear
     association — a prediction that is perfectly correlated with, but off-scale from, the
-    ground truth still loses R² (Miller et al. 2025). Floored at -1.0.
+    ground truth still loses R² :cite:p:`Miller_2025`.
+
+    Deliberately unbounded below, matching :cite:t:`Mejia_2025`'s reference implementation:
+    a prediction that ignores the perturbation is guaranteed :math:`\leq 0` (their Appendix B),
+    and how far below tells you how badly it failed. Clipping that range would erase the
+    property R² is chosen for, and would distort the DRF of both controls at once.
 
     Parameters
     ----------
@@ -153,9 +158,9 @@ def r2(gt, prediction, ctx):
     Returns
     -------
     float
-        R² in [-1, 1]; 1 is perfect.
+        R² ≤ 1; 1 is perfect, 0 matches the mean baseline, negative is worse than it.
     """
-    return max(float(r2_score(gt, prediction)), -1.0)
+    return float(r2_score(gt, prediction))
 
 
 @_doc(params=_CENTROID)
@@ -234,8 +239,15 @@ def weighted_mse(gt, prediction, ctx, exp=2.0):
 def weighted_pearson(gt, prediction, ctx, exp=2.0):
     r"""Pearson correlation weighted by ground-truth effect size raised to ``exp``.
 
-    Same per-gene weights as :func:`weighted_mse` (Vollenweider & Bühlmann 2026's "Weighted
-    Pearson Delta"), applied as a weighted covariance instead of a weighted squared error.
+    Same per-gene weights as :func:`weighted_mse`, applied as a weighted covariance instead of a
+    weighted squared error — the "weighted Pearson Delta" of :cite:t:`Vollenweider_2026`.
+
+    Assumes the weights sum to 1, which :func:`~scperteval.blocks.de.mejia_weights` guarantees
+    (:cite:t:`Mejia_2025` normalises them as step (v) of its weight definition, and its reference
+    implementation divides by the weight sum at point of use). That is what lets the weighted
+    means below be written as ``sum(w * x)``. Weights that do not sum to 1 need every term
+    divided by ``w.sum()`` — the general form in :cite:t:`Vollenweider_2026` — otherwise the
+    means are scaled wrongly and the correlation is not bounded to [-1, 1].
 
     .. math::
 
@@ -267,8 +279,9 @@ def weighted_r2(gt, prediction, ctx, exp=2.0):
     r"""Coefficient of determination weighted by ground-truth effect size raised to ``exp``.
 
     Same per-gene weights as :func:`weighted_mse`, passed straight to scikit-learn's
-    weighted :math:`R^2` (Miller et al. 2025's "continuous weighting" variant of :func:`r2`).
-    Floored at -1.0.
+    weighted :math:`R^2` — the :math:`R_w^2(\Delta)` of :cite:t:`Mejia_2025`, which
+    :cite:t:`Miller_2025` adopts as the "continuous weighting" variant of :func:`r2`.
+    Unbounded below, as :func:`r2` is.
 
     Parameters
     ----------
@@ -279,13 +292,13 @@ def weighted_r2(gt, prediction, ctx, exp=2.0):
     Returns
     -------
     float
-        Weighted R² in [-1, 1]; 1 is perfect. ``nan`` if every weight is 0.
+        Weighted R² ≤ 1; 1 is perfect. ``nan`` if every weight is 0.
     """
     s = ctx.de(ctx.current_pert, ctx.cfg.truth, "all_perturbed").statistic
     w = mejia_weights(s, exp=exp)
     if w.sum() <= 0:
         return float("nan")
-    return max(float(r2_score(gt, prediction, sample_weight=w)), -1.0)
+    return float(r2_score(gt, prediction, sample_weight=w))
 
 
 @_doc(params=_POPULATION)
@@ -448,10 +461,15 @@ def rank_retrieval(gt, prediction, ctx, transpose=False):
 
 @_doc(params=_DATASET)
 def nir(gt, prediction, ctx):
-    r"""Normalized Inverse Rank (Miller et al. 2025) — dataset-scope, higher is better.
+    r"""Normalized Inverse Rank — dataset-scope, higher is better.
 
-    :func:`rank_retrieval` with ``transpose=True`` (each prediction ranked among all
-    ground-truth centroids), inverted so 1 is a perfect top-1 retrieval and 0 is worst.
+    Introduced by :cite:t:`Wu_2024` as the "transposed-rank" metric, and adopted under this name
+    by :cite:t:`Miller_2025`. Exactly ``1 - transpose_rank``: :func:`rank_retrieval` with
+    ``transpose=True`` (each prediction ranked among all ground-truth centroids), inverted so 1
+    is a perfect top-1 retrieval and 0 is worst. Under DRF and BDS this reparameterisation
+    cancels, so it scores identically to ``transpose_rank``; it is kept as its own metric for the
+    published name and sign convention, and because other calibrators need not be invariant to
+    it.
 
     .. math::
 
