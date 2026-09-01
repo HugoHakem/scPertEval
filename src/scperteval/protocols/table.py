@@ -11,14 +11,14 @@ from __future__ import annotations
 from functools import partial
 from typing import Any
 
-from ..blocks.spaces import degs_space, pca_space, top_space
+from ..blocks.spaces import SPACES
 from ..types import Param, Protocol
 from . import metrics as M
 
 # --- parameter families: a CLI value selects a feature space (or feeds the metric) ---
-top_k = Param("k", int, 50, space=top_space)  # top-k DEGs by effect size
-pca_k = Param("k", int, 50, space=pca_space)  # k principal components
-degs_padj = Param("padj", float, 0.05, space=degs_space)  # DEGs at adjusted p < padj
+top_k = Param("k", int, 50, space=partial(SPACES.instance, "top"))  # top-k DEGs by effect size
+pca_k = Param("k", int, 50, space=partial(SPACES.instance, "pca"))  # k principal components
+degs_padj = Param("padj", float, 0.05, space=partial(SPACES.instance, "degs"))  # DEGs at adjusted p < padj
 overlap_k = Param("k", int, 50)  # passed straight to de_overlap's k
 
 
@@ -28,6 +28,8 @@ overlap_k = Param("k", int, 50)  # passed straight to de_overlap's k
 _PB: dict[str, Any] = dict(group="pseudobulk")
 _LOWER: dict[str, Any] = dict(better="lower", perfect=0.0)
 _DIST: dict[str, Any] = dict(group="distributional", better="lower", perfect=0.0)
+# Distributional, but backed by geomloss/torch — only available with the `sinkhorn` extra.
+_OT: dict[str, Any] = dict(**_DIST, requires_extra="sinkhorn")
 # de: GT tested vs all-perturbed; the negative candidate is tested vs control (hybrid reference).
 _DE: dict[str, Any] = dict(
     group="de",
@@ -90,8 +92,8 @@ TABLE = [
     Protocol("unbiased_mmd_median_pca_k", M.unbiased_mmd_median, representation="population", param=pca_k, **_DIST),
     Protocol("energy_distance_top_k", M.energy_distance, representation="population", param=top_k, **_DIST),
     Protocol("energy_distance_pca_k", M.energy_distance, representation="population", param=pca_k, **_DIST),
-    Protocol("sinkhorn_w2_top_k", M.sinkhorn_w2, representation="population", param=top_k, **_DIST),
-    Protocol("sinkhorn_w2_pca_k", M.sinkhorn_w2, representation="population", param=pca_k, **_DIST),
+    Protocol("sinkhorn_w2_top_k", M.sinkhorn_w2, representation="population", param=top_k, **_OT),
+    Protocol("sinkhorn_w2_pca_k", M.sinkhorn_w2, representation="population", param=pca_k, **_OT),
     # --- differential expression: GT DEGs vs prediction ranking ---
     Protocol("de_auprc", M.de_auprc, representation="de", **_DE),
     Protocol("de_auroc", M.de_auroc, representation="de", **_DE),

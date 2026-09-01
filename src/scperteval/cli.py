@@ -12,7 +12,7 @@ from .calibrators import CALIBRATORS
 from .context import Context
 from .dataset import Dataset
 from .predictions import PredictionSet
-from .protocols.resolve import _concrete, _resolve_token, resolve_protocols  # noqa: F401 (re-exported)
+from .protocols.resolve import _concrete, _resolve_token, available, resolve_protocols  # noqa: F401 (re-exported)
 from .protocols.table import TABLE
 from .runner import _resolve_candidates, compute_de, run_all
 from .sources import SOURCES
@@ -123,11 +123,22 @@ def cmd_list(args) -> None:
             c = _resolve_candidates(p, default_cfg)
             return f"{p.group}, {p.representation}{scope}, {knob}, controls +{c['positive']}/-{c['negative']}"
 
-        lines = [f"{p.name:24s} ({descr(p)})" for p in TABLE]
+        def extra_note(p):
+            if p.requires_extra is None:
+                return ""
+            state = "installed" if available(p) else "NOT installed"
+            return f"  [needs '{p.requires_extra}' extra — {state}]"
+
+        lines = [f"{p.name:24s} ({descr(p)}){extra_note(p)}" for p in TABLE]
     elif args.what == "de-methods":
         lines = reg(DE_METHODS, lambda n, m: f"{n:10s} — {m.get('description', '')}")
     elif args.what == "spaces":
-        lines = reg(SPACES, lambda n, m: f"{n:10s} — {m.get('description', '')}")
+        lines = [
+            f"{s.label:19s} — {s.describe()}"
+            + (f" (default {s.default:g})" if s.parameter else "")
+            + (", per perturbation" if s.per_pert else "")
+            for s in SPACES.catalog()
+        ]
     elif args.what == "sources":
         lines = reg(SOURCES, lambda n, m: f"{n:14s} ({m.get('provides')}) — {m.get('description', '')}")
     elif args.what == "calibrators":

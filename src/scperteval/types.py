@@ -76,7 +76,7 @@ class Param:
     cast: Callable
     #: Default value used when no value is given on the CLI.
     default: float
-    #: Factory mapping the value to a feature-space name (e.g. ``top_space``); ``None`` passes the value directly to the metric.
+    #: Maps the value to a feature-space name (e.g. ``partial(SPACES.instance, "top")``); ``None`` passes the value directly to the metric.
     space: Callable | None = None
 
 
@@ -144,6 +144,10 @@ class Protocol:
     group: str = ""
     #: If set, makes the protocol tunable from the CLI; ``None`` for fixed protocols.
     param: Param | None = None
+    #: Optional-dependency extra this protocol's metric needs (e.g. ``"sinkhorn"``); ``None``
+    #: for protocols that run on the base install. Bulk selectors (``all``, a group) skip
+    #: protocols whose extra is not installed; naming one explicitly is an error.
+    requires_extra: str | None = None
 
     @property
     def parameterised(self) -> bool:
